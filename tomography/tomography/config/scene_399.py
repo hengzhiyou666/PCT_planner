@@ -11,8 +11,8 @@ class SceneBuilding(Scene):
         self.map.slice_dh = 0.5
 
         self.trav.kernel_size = 7
-        self.trav.interval_min = 0.60
-        self.trav.interval_free = 0.80
+        self.trav.interval_min = 0.50
+        self.trav.interval_free = 0.65
         self.trav.slope_max = 0.40
         self.trav.step_max = 0.17
         self.trav.standable_ratio = 0.20

@@ -4,9 +4,8 @@ project(planning_core CXX)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED true)
 
-if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Release)
-endif()
+# 不要在这里设置 CMAKE_BUILD_TYPE，让父级 CMakeLists.txt 控制
+# 这样可以避免 ament 安装系统生成错误的文件名
 
 set(CMAKE_CXX_FLAGS "-Wall -Wextra")
 set(CMAKE_CXX_FLAGS_DEBUG "-g")

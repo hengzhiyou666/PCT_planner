@@ -38,6 +38,7 @@ from .config import scene
 
 class Tomography(Node):
     def __init__(self, cfg: Config):
+        print("########################### 进入tomography_node.py的41行的Tomography()类的__init__()初始化函数 ###########################", flush=True)
         super().__init__('pointcloud_tomography')
 
         self.declare_parameter("rsg_root", None)
@@ -64,7 +65,7 @@ class Tomography(Node):
             scene_module = importlib.import_module(scene_module_name)
         except ModuleNotFoundError:
              # Fallback to relative import if running as script or different structure
-             scene_module = importlib.import_module(f".config.scene_{self.scene_name}", package="tomography")
+            scene_module = importlib.import_module(f".config.scene_{self.scene_name}", package="tomography")
 
         scene_cfg: scene.Scene = getattr(scene_module, scene_class_name)()
 
@@ -85,14 +86,20 @@ class Tomography(Node):
         self.center = np.zeros(2, dtype=np.float32)
         self.tomogram = Tomogram(scene_cfg)
 
+        print("########################### tomography_node.py的89行,加载和处理点云数据) ###########################", flush=True)
         self.get_logger().info(f"PCD file name: {self.pcd_file}")
         if self.pcd_file is None:
+            print("########################### tomography_node.py的92行,没找到pcd文件 ###########################", flush=True)
             raise ValueError("PCD file name is not specified.")
         else:
+            print("###########################tomography_node.py的95行,开始加载pcd文件###########################", flush=True)
             points = self.loadPCD()
+            print("###########################tomography_node.py的97行,加载pcd文件完成###########################", flush=True)
 
         # Process
+        print("###########################tomography_node.py的100行,开始处理点云数据###########################", flush=True)
         self.process(points)
+        print("###########################tomography_node.py的103行,处理点云数据完成###########################", flush=True)
 
     def initROS(self):
         self.map_frame = self.cfg.ros.map_frame
@@ -180,11 +187,21 @@ class Tomography(Node):
 
         self.exportTomogram(np.stack((layers_t, trav_grad_x, trav_grad_y, layers_g, layers_c)), map_file)
 
+        # 保存数据以便定期重新发布
+        self.points = points
+        self.layers_g = layers_g
+        self.layers_t = layers_t
+        self.layers_c = layers_c
+
         self.initROS()
         self.publishPoints(points)
         self.publishLayers(self.layer_G_pub_list, layers_g, layers_t)
         self.publishLayers(self.layer_C_pub_list, layers_c, None)
         self.publishTomogram(layers_g, layers_t)
+        
+        # 添加定时器，定期重新发布数据，确保RViz重新订阅时能显示
+        # 每2秒发布一次，频率足够低不会造成性能问题，但足够高能及时响应RViz的重新订阅
+        self.publish_timer = self.create_timer(2.0, self.periodic_publish)
 
     def exportTomogram(self, tomogram, map_file):        
         data_dict = {
@@ -272,6 +289,14 @@ class Tomography(Node):
 
         points_msg = pc2.create_cloud(header, POINT_FIELDS_XYZI, global_points)
         self.tomogram_pub.publish(points_msg)
+
+    def periodic_publish(self):
+        """定期重新发布所有数据，确保RViz重新订阅时能显示"""
+        if hasattr(self, 'points') and hasattr(self, 'layers_g'):
+            self.publishPoints(self.points)
+            self.publishLayers(self.layer_G_pub_list, self.layers_g, self.layers_t)
+            self.publishLayers(self.layer_C_pub_list, self.layers_c, None)
+            self.publishTomogram(self.layers_g, self.layers_t)
 
 
 def main(args=None):

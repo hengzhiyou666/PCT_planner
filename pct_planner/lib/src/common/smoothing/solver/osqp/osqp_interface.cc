@@ -33,7 +33,7 @@ bool OsqpInterface::Solve(
   settings->eps_abs = 1.0e-05;
   settings->eps_rel = 1.0e-05;
   settings->max_iter = 5000;
-  settings->polishing = 1;
+  settings->polish = 1;
   settings->verbose = 0;
 
   OSQPCscMatrix* P_osqp = nullptr;
@@ -55,7 +55,17 @@ bool OsqpInterface::Solve(
   OSQPInt m = A.rows();
   OSQPInt n = P.rows();
   
-  OSQPInt exitflag = osqp_setup(&solver, P_osqp, q.data(), A_osqp, l.data(), u.data(), m, n, settings);
+  // 新版本 OSQP API 需要 OSQPData 结构体
+  OSQPData data;
+  data.n = n;
+  data.m = m;
+  data.P = P_osqp;
+  data.A = A_osqp;
+  data.q = q.data();
+  data.l = l.data();
+  data.u = u.data();
+  
+  OSQPInt exitflag = osqp_setup(&solver, &data, settings);
 
   if (exitflag != 0) {
       FreeOsqpSparseMatrix(P_osqp);
@@ -114,7 +124,7 @@ bool OsqpInterface::Solve(
   settings->eps_abs = 1.0e-05;
   settings->eps_rel = 1.0e-05;
   settings->max_iter = 5000;
-  settings->polishing = 1;
+  settings->polish = 1;
   settings->verbose = 0;
 
   OSQPInt m = A.rows();
@@ -138,8 +148,18 @@ bool OsqpInterface::Solve(
   A_osqp.i = A_indices.data();
   A_osqp.p = A_indptr.data();
 
+  // 新版本 OSQP API 需要 OSQPData 结构体
+  OSQPData data;
+  data.n = n;
+  data.m = m;
+  data.P = &P_osqp;
+  data.A = &A_osqp;
+  data.q = q.data();
+  data.l = l.data();
+  data.u = u.data();
+
   OSQPSolver* solver = nullptr;
-  OSQPInt exitflag = osqp_setup(&solver, &P_osqp, q.data(), &A_osqp, l.data(), u.data(), m, n, settings);
+  OSQPInt exitflag = osqp_setup(&solver, &data, settings);
 
   if (exitflag != 0) {
       free(settings);

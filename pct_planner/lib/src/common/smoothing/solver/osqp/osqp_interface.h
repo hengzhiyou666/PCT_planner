@@ -5,6 +5,21 @@
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 
+// OSQP 类型别名：OSQP 使用 c_float 和 c_int，这里定义为 OSQPFloat 和 OSQPInt 以保持代码兼容性
+#ifndef OSQPFloat
+#define OSQPFloat c_float
+#endif
+#ifndef OSQPInt
+#define OSQPInt c_int
+#endif
+#ifndef OSQPCscMatrix
+#define OSQPCscMatrix csc
+#endif
+// OSQPSolver 是 OSQPWorkspace 的别名（旧版本兼容）
+#ifndef OSQPSolver
+typedef OSQPWorkspace OSQPSolver;
+#endif
+
 namespace common {
 
 using ColSparseMatrix = Eigen::SparseMatrix<double, Eigen::ColMajor>;
