@@ -39,12 +39,12 @@ from .config import scene
 class Tomography(Node):
     def __init__(self, cfg: Config):
         print("########################### 进入tomography_node.py的41行的Tomography()类的__init__()初始化函数 ###########################", flush=True)
-        super().__init__('pointcloud_tomography')
-
-        self.declare_parameter("rsg_root", None)
-        rsg_root_param = self.get_parameter("rsg_root")
-        self.declare_parameter("scene_name", None)
-        scene_name_param = self.get_parameter("scene_name")
+        super().__init__('pointcloud_tomography')#初始化节点，设置节点名称为pointcloud_tomography
+        
+        self.declare_parameter("rsg_root", None)#Node 对象 → 代表节点 → 告诉 ROS2 系统 → 我需要用这个参数#对象就是节点
+        rsg_root_param = self.get_parameter("rsg_root")#从节点 读到 临时变量
+        self.declare_parameter("scene_name", None)#Node 对象 → 代表节点 → 告诉 ROS2 系统 → 我需要用这个参数
+        scene_name_param = self.get_parameter("scene_name")#从节点 读到 临时变量
 
         if rsg_root_param.value is None:
             raise ValueError("Missing required parameter: rsg_root")
@@ -52,8 +52,8 @@ class Tomography(Node):
         if scene_name_param.value is None:
             raise ValueError("Missing required parameter: scene_name")
         
-        self.rsg_root = rsg_root_param.get_parameter_value().string_value
-        self.scene_name = scene_name_param.get_parameter_value().string_value.lower()
+        self.rsg_root = rsg_root_param.get_parameter_value().string_value#将临时变量的值 给对象
+        self.scene_name = scene_name_param.get_parameter_value().string_value.lower()#将临时变量的值 给对象
         
         # scene_module_name = f"config.scene_{self.scene_name}"
         # Use relative import for dynamic loading or absolute package path
@@ -300,7 +300,7 @@ class Tomography(Node):
 
 
 def main(args=None):
-    rclpy.init(args=args)
+    rclpy.init(args=args)#解析args，并将参数存储到本节点（此时参数还没到对象内部）
     
     cfg = Config()    
     node = Tomography(cfg)

@@ -8,7 +8,7 @@ class SceneSpiral(Scene):
         self.pcd.file_name = 'spiral0.3_2.pcd'
 
         self.map.resolution = 0.20
-        self.map.ground_h = 0.0
+        self.map.ground_h = 0.0 #map.ground_h以下的点云点会被裁减掉
         self.map.slice_dh = 0.5
 
         self.trav.kernel_size = 7

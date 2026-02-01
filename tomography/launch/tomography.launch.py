@@ -13,13 +13,13 @@ def generate_launch_description():
     except Exception:
         raise AttributeError("tomogram_rsc package not found. Please ensure it is installed or provide the absolute path.")
 
-    rsg_root_arg = DeclareLaunchArgument(
+    rsg_root_arg = DeclareLaunchArgument(#声明“我可以接收这个参数”
         'rsg_root',
         default_value=tomogram_rsc_share,
         description='Root directory for resources (containing pcd, rviz, tomogram folders)'
     )
 
-    scene_name_arg = DeclareLaunchArgument(
+    scene_name_arg = DeclareLaunchArgument(#声明“我可以接收这个参数”
         'scene_name',
         default_value='plaza',
         description='Name of the scene to load (e.g., plaza, building)'
@@ -32,8 +32,8 @@ def generate_launch_description():
         name='tomography_node',
         output='screen',
         parameters=[{
-            'rsg_root': LaunchConfiguration('rsg_root'),
-            'scene_name': LaunchConfiguration('scene_name')
+            'rsg_root': LaunchConfiguration('rsg_root'),#接收终端输入的参数
+            'scene_name': LaunchConfiguration('scene_name')#接收终端输入的参数
         }]
     )
 

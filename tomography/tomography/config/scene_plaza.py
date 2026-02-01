@@ -7,7 +7,7 @@ class ScenePlaza(Scene):
         self.pcd.file_name = 'plaza3_10.pcd'
 
         self.map.resolution = 0.10
-        self.map.ground_h = 0.0
+        self.map.ground_h = 0.0 #map.ground_h以下的点云点会被裁减掉
         self.map.slice_dh = 0.5
 
         self.trav.kernel_size = 7

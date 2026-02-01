@@ -1,13 +1,13 @@
 from .scene import Scene
 
 
-class SceneBuilding(Scene):
+class scans1_399MB(Scene):
     def __init__(self):
         super().__init__()
         self.pcd.file_name = 'scans1_399MB.pcd'
         
         self.map.resolution = 0.10
-        self.map.ground_h = 0.0
+        self.map.ground_h = 0.0 #map.ground_h以下的点云点会被裁减掉
         self.map.slice_dh = 0.5
 
         self.trav.kernel_size = 7
