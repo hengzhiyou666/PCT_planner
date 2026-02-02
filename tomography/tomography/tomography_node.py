@@ -53,23 +53,24 @@ class Tomography(Node):
             raise ValueError("Missing required parameter: scene_name")
         
         self.rsg_root = rsg_root_param.get_parameter_value().string_value#将临时变量的值 给对象
-        self.scene_name = scene_name_param.get_parameter_value().string_value.lower()#将临时变量的值 给对象
+        self.scene_name = scene_name_param.get_parameter_value().string_value.lower()#将临时变量的值 统一成小写后 给对象
         
         # scene_module_name = f"config.scene_{self.scene_name}"
         # Use relative import for dynamic loading or absolute package path
         # Assuming 'tomography' is the package name
-        scene_module_name = f"tomography.config.scene_{self.scene_name}"
-        scene_class_name = f"Scene{self.scene_name.capitalize()}"
-
+        scene_module_name = f"tomography.config.scene_{self.scene_name}"#.py文件    拼接出 .py场景配置文件的路径和前缀
+        scene_class_name = f"Scene{self.scene_name.capitalize()}"#.py文件中类名    capitalize()将字符串的首字母大写，这个单词翻译就是首字母大写
+                                                                 #并且拼接场景名 Bulilding->SceneBulilding，这是类名
         try:
-            scene_module = importlib.import_module(scene_module_name)
+            scene_module = importlib.import_module(scene_module_name)#输入tomography.config.scene_building
+                                                                     #对应tomography/config/scene_building.py文件，返回scene_module对象
         except ModuleNotFoundError:
              # Fallback to relative import if running as script or different structure
             scene_module = importlib.import_module(f".config.scene_{self.scene_name}", package="tomography")
 
-        scene_cfg: scene.Scene = getattr(scene_module, scene_class_name)()
+        scene_cfg: scene.Scene = getattr(scene_module, scene_class_name)()#获取scene_module对象中的scene_class_name类，并实例化
 
-        self.cfg = cfg
+        self.cfg = cfg #保存为实例变量，等号右边的cfg作用域仅限于__init__,所以需要赋值给实例变量
 
         self.qos = QoSProfile(
             depth=1,
@@ -77,14 +78,14 @@ class Tomography(Node):
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL
         )
 
-        self.export_dir = self.rsg_root + cfg.map.export_dir
-        self.pcd_file = scene_cfg.pcd.file_name
-        self.resolution = scene_cfg.map.resolution
-        self.ground_h = scene_cfg.map.ground_h
+        self.export_dir = self.rsg_root + cfg.map.export_dir#保存为实例变量
+        self.pcd_file = scene_cfg.pcd.file_name#保存为实例变量
+        self.resolution = scene_cfg.map.resolution#保存为实例变量
+        self.ground_h = scene_cfg.map.ground_h#保存为实例变量
         self.slice_dh = scene_cfg.map.slice_dh
 
-        self.center = np.zeros(2, dtype=np.float32)
-        self.tomogram = Tomogram(scene_cfg)
+        self.center = np.zeros(2, dtype=np.float32)#保存为实例变量
+        self.tomogram = Tomogram(scene_cfg)#保存为实例变量
 
         print("########################### tomography_node.py的89行,加载和处理点云数据) ###########################", flush=True)
         self.get_logger().info(f"PCD file name: {self.pcd_file}")

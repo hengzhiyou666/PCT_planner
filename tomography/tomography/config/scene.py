@@ -6,7 +6,7 @@ class ScenePCD():
 
 
 class SceneMap():
-    resolution = 0.10
+    resolution = 0.10#网格分辨率
     ground_h = 0.0
     slice_dh = 0.5
 
