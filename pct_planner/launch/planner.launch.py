@@ -23,7 +23,7 @@ def generate_launch_description():
 
     scene_name_arg = DeclareLaunchArgument(
         'scene_name',
-        default_value='Plaza',
+        default_value='Building',
         description='Name of the scene to load (e.g., Plaza, Building, Spiral)'
     )
 

@@ -33,7 +33,7 @@ bool OsqpInterface::Solve(
   settings->eps_abs = 1.0e-05;
   settings->eps_rel = 1.0e-05;
   settings->max_iter = 5000;
-  settings->polish = 1;
+  settings->polishing = 1;
   settings->verbose = 0;
 
   OSQPCscMatrix* P_osqp = nullptr;
@@ -52,20 +52,12 @@ bool OsqpInterface::Solve(
   }
 
   OSQPSolver* solver = nullptr;
-  OSQPInt m = A.rows();
-  OSQPInt n = P.rows();
+  OSQPInt m = static_cast<OSQPInt>(A.rows());
+  OSQPInt n = static_cast<OSQPInt>(P.rows());
   
-  // 新版本 OSQP API 需要 OSQPData 结构体
-  OSQPData data;
-  data.n = n;
-  data.m = m;
-  data.P = P_osqp;
-  data.A = A_osqp;
-  data.q = q.data();
-  data.l = l.data();
-  data.u = u.data();
-  
-  OSQPInt exitflag = osqp_setup(&solver, &data, settings);
+  // OSQP 1.0 API: osqp_setup(solverp, P, q, A, l, u, m, n, settings)
+  OSQPInt exitflag = osqp_setup(&solver, P_osqp, q.data(), A_osqp,
+                                l.data(), u.data(), m, n, settings);
 
   if (exitflag != 0) {
       FreeOsqpSparseMatrix(P_osqp);
@@ -124,42 +116,36 @@ bool OsqpInterface::Solve(
   settings->eps_abs = 1.0e-05;
   settings->eps_rel = 1.0e-05;
   settings->max_iter = 5000;
-  settings->polish = 1;
+  settings->polishing = 1;
   settings->verbose = 0;
 
-  OSQPInt m = A.rows();
-  OSQPInt n = P.rows();
+  OSQPInt m = static_cast<OSQPInt>(A.rows());
+  OSQPInt n = static_cast<OSQPInt>(P.rows());
 
   OSQPCscMatrix P_osqp;
   P_osqp.m = n;
   P_osqp.n = n;
   P_osqp.nz = -1;
-  P_osqp.nzmax = P_data.size();
+  P_osqp.nzmax = static_cast<OSQPInt>(P_data.size());
   P_osqp.x = P_data.data();
   P_osqp.i = P_indices.data();
   P_osqp.p = P_indptr.data();
+  P_osqp.owned = 0;
 
   OSQPCscMatrix A_osqp;
   A_osqp.m = m;
   A_osqp.n = n;
   A_osqp.nz = -1;
-  A_osqp.nzmax = A_data.size();
+  A_osqp.nzmax = static_cast<OSQPInt>(A_data.size());
   A_osqp.x = A_data.data();
   A_osqp.i = A_indices.data();
   A_osqp.p = A_indptr.data();
+  A_osqp.owned = 0;
 
-  // 新版本 OSQP API 需要 OSQPData 结构体
-  OSQPData data;
-  data.n = n;
-  data.m = m;
-  data.P = &P_osqp;
-  data.A = &A_osqp;
-  data.q = q.data();
-  data.l = l.data();
-  data.u = u.data();
-
+  // OSQP 1.0 API
   OSQPSolver* solver = nullptr;
-  OSQPInt exitflag = osqp_setup(&solver, &data, settings);
+  OSQPInt exitflag = osqp_setup(&solver, &P_osqp, q.data(), &A_osqp,
+                                l.data(), u.data(), m, n, settings);
 
   if (exitflag != 0) {
       free(settings);

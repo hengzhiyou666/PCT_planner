@@ -6,16 +6,7 @@
 
 #include <Eigen/Sparse>
 
-// OSQP 类型别名：OSQP 使用 c_float 和 c_int，这里定义为 OSQPFloat 和 OSQPInt 以保持代码兼容性
-#ifndef OSQPFloat
-#define OSQPFloat c_float
-#endif
-#ifndef OSQPInt
-#define OSQPInt c_int
-#endif
-#ifndef OSQPCscMatrix
-#define OSQPCscMatrix csc
-#endif
+// OSQP 1.0+ 已在 osqp_api_types.h 中定义 OSQPFloat, OSQPInt, OSQPCscMatrix
 
 namespace common {
 
@@ -55,6 +46,7 @@ bool CreateOsqpSparseMatrix(
   osqpSparseMatrix->n = cols;
   osqpSparseMatrix->nz = -1;
   osqpSparseMatrix->nzmax = numberOfNonZeroCoeff;
+  osqpSparseMatrix->owned = 0;  /* user-allocated memory */
   osqpSparseMatrix->p = (OSQPInt*)malloc((cols + 1) * sizeof(OSQPInt));
   osqpSparseMatrix->i = (OSQPInt*)malloc(numberOfNonZeroCoeff * sizeof(OSQPInt));
   osqpSparseMatrix->x = (OSQPFloat*)malloc(numberOfNonZeroCoeff * sizeof(OSQPFloat));

@@ -142,9 +142,9 @@ class TomogramPlanner(object):
         print("########################### planner_wrapper.py的142行的planner.get_path_finder()函数获取路径查找器完成，暂不知道结果如何 ###########################", flush=True)
         path = path_finder.get_result_matrix()
         if len(path) == 0:
-            print("########################### planner_wrapper.py的145行的if len(path) == 0: 条件成立，返回None ###########################", flush=True)
+            print("########################### planner_wrapper.py的145行的if len(path) == 0: 路径长度为0,路径规划失败 ###########################", flush=True)
             return None
-        print("########################### planner_wrapper.py的148行的if len(path) !=0，继续执行 ###########################", flush=True)
+        print("########################### planner_wrapper.py的148行的if len(path) !=0，路径长度不为0,继续执行 ###########################", flush=True)
         optimizer: traj_opt.GPMPOptimizer = (
             self.planner.get_trajectory_optimizer()
             if not self.use_quintic

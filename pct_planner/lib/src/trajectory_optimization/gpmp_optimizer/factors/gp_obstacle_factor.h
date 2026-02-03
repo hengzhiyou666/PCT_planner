@@ -2,16 +2,18 @@
 
 #include <memory>
 
-#include "gtsam/nonlinear/NonlinearFactor.h"
+#include "gtsam/nonlinear/NoiseModelFactorN.h"
 #include "map_manager/dense_elevation_map.h"
 
 class GPObstacleFactor : public gtsam::NoiseModelFactor1<gtsam::Vector6> {
+  using Base = gtsam::NoiseModelFactor1<gtsam::Vector6>;
+
  public:
   GPObstacleFactor(gtsam::Key key, std::shared_ptr<DenseElevationMap> map,
                    int current_layer, const double height_hint,
                    const double q_cost, const double cost_threshold,
                    bool verbose = false)
-      : NoiseModelFactor1(gtsam::noiseModel::Isotropic::Sigma(1, q_cost), key),
+      : Base(gtsam::noiseModel::Isotropic::Sigma(1, q_cost), key),
         map_(map),
         cost_threshold_(cost_threshold),
         current_layer_(current_layer),
@@ -23,7 +25,7 @@ class GPObstacleFactor : public gtsam::NoiseModelFactor1<gtsam::Vector6> {
 
   gtsam::Vector evaluateError(
       const gtsam::Vector6& x1,
-      boost::optional<gtsam::Matrix&> H1 = boost::none) const override;
+      gtsam::OptionalMatrixType H1 = OptionalNone) const override;
 
   void verbose() { verbose_ = true; }
 

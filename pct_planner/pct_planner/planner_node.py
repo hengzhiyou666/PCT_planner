@@ -67,19 +67,24 @@ class PCTPlanner(Node):
         self.pct_plan()
 
     def configure_scene(self, scene_name):
-        if scene_name == 'Spiral':
-            self.tomo_file = 'spiral0.3_2'
+        scene_name = scene_name.strip().capitalize() if scene_name else ''
+        if scene_name == 'Default':
+            self.tomo_file = 'default'
             self.start_pos_xy = np.array([-16.0, -6.0], dtype=np.float32)
             self.end_pos_xy = np.array([-26.0, -5.0], dtype=np.float32)
-        elif scene_name == 'Building':
-            self.tomo_file = 'scans1_399MB'
-            print("########################### 选择Building场景名称，并设置起点和终点坐标 ###########################", flush=True)
-            self.start_pos_xy = np.array([5.0, 5.0], dtype=np.float32)
-            self.end_pos_xy = np.array([-6.0, -1.0], dtype=np.float32)
         elif scene_name == 'Plaza':
             self.tomo_file = 'plaza3_10'
             self.start_pos_xy = np.array([0.0, 0.0], dtype=np.float32)
             self.end_pos_xy = np.array([23.0, 10.0], dtype=np.float32)
+        elif scene_name == 'Building':
+            self.tomo_file = 'building2_9'
+            print("########################### 选择Building场景名称，并设置起点和终点坐标 ###########################", flush=True)
+            self.start_pos_xy = np.array([5.0, 5.0], dtype=np.float32)
+            self.end_pos_xy = np.array([-6.0, -1.0], dtype=np.float32)
+        elif scene_name == 'Spiral':
+            self.tomo_file = 'spiral0.3_2'
+            self.start_pos_xy = np.array([-16.0, -6.0], dtype=np.float32)
+            self.end_pos_xy = np.array([-26.0, -5.0], dtype=np.float32)
         else:
             self.get_logger().error(f"Invalid scene name: {scene_name}")
             raise ValueError(f"Invalid scene name: {scene_name}")
