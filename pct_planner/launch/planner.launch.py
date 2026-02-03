@@ -23,7 +23,7 @@ def generate_launch_description():
 
     scene_name_arg = DeclareLaunchArgument(
         'scene_name',
-        default_value='Building',
+        default_value='default',#默认值为default，对应default_*.pcd 和 default_*.pickle 文件
         description='Name of the scene to load (e.g., Plaza, Building, Spiral)'
     )
 

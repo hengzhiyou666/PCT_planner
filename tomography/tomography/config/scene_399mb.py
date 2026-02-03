@@ -1,7 +1,7 @@
 from .scene import Scene
 
 
-class scans1_399MB(Scene):
+class scans1_399mb(Scene):
     def __init__(self):
         super().__init__()
         self.pcd.file_name = 'scans1_399MB.pcd'

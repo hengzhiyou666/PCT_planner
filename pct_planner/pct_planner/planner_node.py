@@ -1,3 +1,5 @@
+import glob
+import os
 import sys
 import numpy as np
 import rclpy
@@ -69,9 +71,17 @@ class PCTPlanner(Node):
     def configure_scene(self, scene_name):
         scene_name = scene_name.strip().capitalize() if scene_name else ''
         if scene_name == 'Default':
-            self.tomo_file = 'default'
-            self.start_pos_xy = np.array([-16.0, -6.0], dtype=np.float32)
-            self.end_pos_xy = np.array([-26.0, -5.0], dtype=np.float32)
+            # 从 tomogram 目录选取第一个 default_*.pickle（相对路径）
+            tomo_dir = os.path.join(self.rsg_root, 'tomogram')
+            default_pickles = sorted(glob.glob(os.path.join(tomo_dir, 'default_*.pickle')))
+            if not default_pickles:
+                raise FileNotFoundError(
+                    f"No default_*.pickle found in {tomo_dir}. "
+                    "Run tomography with scene_name:=default first."
+                )
+            self.tomo_file = os.path.basename(default_pickles[0]).replace('.pickle', '')
+            self.start_pos_xy = np.array([0.0, 0.0], dtype=np.float32)
+            self.end_pos_xy = np.array([5.0, 5.0], dtype=np.float32)
         elif scene_name == 'Plaza':
             self.tomo_file = 'plaza3_10'
             self.start_pos_xy = np.array([0.0, 0.0], dtype=np.float32)

@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 # import argparse
+import glob
 import os
 import sys
 import pathlib
@@ -78,8 +79,19 @@ class Tomography(Node):
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL
         )
 
-        self.export_dir = self.rsg_root + cfg.map.export_dir#保存为实例变量
-        self.pcd_file = scene_cfg.pcd.file_name#保存为实例变量
+        self.export_dir = self.rsg_root + cfg.map.export_dir
+        self.pcd_file = scene_cfg.pcd.file_name
+        # default 场景：从 pcd 目录选取第一个 default_*.pcd
+        if self.scene_name == 'default' or self.pcd_file is None:
+            pcd_dir = os.path.join(self.rsg_root, 'pcd')
+            default_pcds = sorted(glob.glob(os.path.join(pcd_dir, 'default_*.pcd')))
+            if not default_pcds:
+                raise FileNotFoundError(
+                    f"No default_*.pcd found in {pcd_dir}. "
+                    "Please add default_xxx.pcd to tomogram_rsc/pcd/"
+                )
+            self.pcd_file = os.path.basename(default_pcds[0])
+            self.get_logger().info(f"Using first default PCD: {self.pcd_file}")
         self.resolution = scene_cfg.map.resolution#保存为实例变量
         self.ground_h = scene_cfg.map.ground_h#保存为实例变量
         self.slice_dh = scene_cfg.map.slice_dh
