@@ -4,8 +4,8 @@ using gtsam::Matrix;
 
 gtsam::Vector GPPriorFactor::evaluateError(
     const gtsam::Vector6& x1, const gtsam::Vector6& x2,
-    gtsam::OptionalMatrixType H1,
-    gtsam::OptionalMatrixType H2) const {
+    boost::optional<gtsam::Matrix&> H1,
+    boost::optional<gtsam::Matrix&> H2) const {
   if (H1) *H1 = phi_;
   if (H2) *H2 = -gtsam::Matrix66::Identity();
   // printf("--------------------\n");

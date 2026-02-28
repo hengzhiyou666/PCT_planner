@@ -71,8 +71,8 @@ class OfflineElePlanner {
   }
 
  private:
-  double max_heading_rate_ = 0.5;
   bool use_quintic_ = false;
+  double max_heading_rate_ = 0.5;
 
   std::shared_ptr<DenseElevationMap> map_;
   Astar path_finder_;

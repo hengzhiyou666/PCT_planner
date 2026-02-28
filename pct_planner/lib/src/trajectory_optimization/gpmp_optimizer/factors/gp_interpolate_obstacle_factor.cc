@@ -2,10 +2,9 @@
 
 gtsam::Vector GPInterpolateObstacleFactor::evaluateError(
     const gtsam::Vector6& x1, const gtsam::Vector6& x2,
-    gtsam::OptionalMatrixType H1,
-    gtsam::OptionalMatrixType H2) const {
+    boost::optional<gtsam::Matrix&> H1,
+    boost::optional<gtsam::Matrix&> H2) const {
   if (!initialized_) {
-    int init_layer = current_layer_;
     gtsam::Vector6 x_tmp = gp_interpolator_.Interpolate(x1, x2);
     current_layer_ = map_->UpdateLayerSafe(current_layer_, x_tmp(0, 0),
                                            x_tmp(3, 0), height_hint_);

@@ -20,7 +20,7 @@ constexpr double kQc = 0.1 * 0.1;
 constexpr double kQcHeading = 0.01;
 
 bool GPMPOptimizer::GenerateTrajectory(const std::vector<PathPoint>& input_path,
-                                       const double T) {
+                                       const double /* T */) {
   auto t0 = std::chrono::high_resolution_clock::now();
 
   Vector6 s_init, s_target;
@@ -70,8 +70,8 @@ bool GPMPOptimizer::GenerateTrajectory(const std::vector<PathPoint>& input_path,
     // opt_init_value_.col(col_index) = x1;
     // opt_init_layer_(col_index) = path[i].layer;
     if (debug_) {
-      printf("path[%d/%d], layer: %d, height: %f\n", i, N - 1, path[i].layer,
-             path[i].height);
+      printf("path[%d/%d], layer: %ld, height: %f\n", i, N - 1,
+             static_cast<long>(path[i].layer), path[i].height);
     }
     col_index++;
     if (i < N - 1) {
@@ -88,9 +88,9 @@ bool GPMPOptimizer::GenerateTrajectory(const std::vector<PathPoint>& input_path,
         col_index++;
         if (debug_) {
           printf(
-              "path[%d/%d], layer: %d, inter_layer: %f, height: %f, "
+              "path[%d/%zu], layer: %ld, inter_layer: %f, height: %f, "
               "height2:%f, hint%f, (%f, %f)\n",
-              i, opt_init_layer_.size() - 1, path[i].layer,
+              i, opt_init_layer_.size() - 1, static_cast<long>(path[i].layer),
               opt_init_layer_(col_index), path[i].height, path[i + 1].height,
               height_hint, inter_x(0, 0), inter_x(3, 0));
         }
@@ -162,7 +162,7 @@ bool GPMPOptimizer::GenerateTrajectory(const std::vector<PathPoint>& input_path,
   opt_layers_ = Eigen::VectorXd::Zero(N + (N - 1) * interpolate_num_);
   opt_layers_(0) = path.front().layer;
   opt_layers_(opt_layers_.size() - 1) = path.back().layer;
-  for (int i = 0; i < obstacle_factor_idx.size(); ++i) {
+  for (size_t i = 0; i < obstacle_factor_idx.size(); ++i) {
     // printf("%d, %d, %d, %d\n", i + 1, N, obstacle_factor_idx.size(),
     //        obstacle_factor_idx[i]);
     if (obstacle_factor_idx[i] < 1e7) {
@@ -184,7 +184,8 @@ bool GPMPOptimizer::GenerateTrajectory(const std::vector<PathPoint>& input_path,
   WnojTrajectoryInterpolator traj_interpolator =
       WnojTrajectoryInterpolator(opt_results_, dt, kQc);
   trajectory_ = traj_interpolator.GenerateTrajectory(interpolate_num_);
-  printf("shape: %d, %d\n", trajectory_.rows(), trajectory_.cols());
+  printf("shape: %ld, %ld\n", static_cast<long>(trajectory_.rows()),
+         static_cast<long>(trajectory_.cols()));
 
   printf("smooth height\n");
   opt_height_ = Eigen::VectorXd::Zero(N + (N - 1) * interpolate_num_);
@@ -201,9 +202,9 @@ bool GPMPOptimizer::GenerateTrajectory(const std::vector<PathPoint>& input_path,
 
   auto t1 = std::chrono::high_resolution_clock::now();
   printf(
-      "Optimization finished for N = %d at iteration %d, time elapsed: %f ms, "
+      "Optimization finished for N = %d at iteration %zu, time elapsed: %f ms, "
       "cost: %f\n",
-      N, opt.iterations(),
+      N, static_cast<size_t>(opt.iterations()),
       std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() /
           1000.0,
       opt.error());

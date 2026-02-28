@@ -14,6 +14,8 @@ add_library(gpmp_optimizer SHARED
   gpmp_optimizer/gpmp_optimizer_wnoa.cc
   height_smoother/height_smoother.cc
 )
+# 强制 gpmp_optimizer 优先使用 ROS GTSAM 头文件，避免混用 /usr/local 的 GTSAM
+target_include_directories(gpmp_optimizer BEFORE PRIVATE ${GTSAM_INCLUDE_DIR})
 target_link_libraries(gpmp_optimizer PUBLIC
   gtsam
   map_manager

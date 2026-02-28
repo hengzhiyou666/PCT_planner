@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include "gtsam/nonlinear/NoiseModelFactorN.h"
+#include "gtsam/nonlinear/NonlinearFactor.h"
 #include "map_manager/dense_elevation_map.h"
 #include "trajectory_optimization/gpmp_optimizer/interpolator/wnoj_interpolator.hpp"
 
@@ -32,18 +32,17 @@ class GPInterpolateObstacleFactor
 
   gtsam::Vector evaluateError(
       const gtsam::Vector6& x1, const gtsam::Vector6& x2,
-      gtsam::OptionalMatrixType H1 = OptionalNone,
-      gtsam::OptionalMatrixType H2 = OptionalNone) const override;
+      boost::optional<gtsam::Matrix&> H1 = boost::none,
+      boost::optional<gtsam::Matrix&> H2 = boost::none) const override;
 
  private:
   mutable int count_ = 0;
   mutable bool initialized_ = false;
   mutable int current_layer_ = 0;
   mutable double height_hint_ = 0.0;
-  double cost_threshold_ = 0.0;
-  double tau_ = 0.0;
-  double param_ = 0.0;
-
-  GPInterpolator gp_interpolator_;
   std::shared_ptr<DenseElevationMap> map_;
+  double cost_threshold_ = 0.0;
+  double param_ = 0.0;
+  double tau_ = 0.0;
+  GPInterpolator gp_interpolator_;
 };

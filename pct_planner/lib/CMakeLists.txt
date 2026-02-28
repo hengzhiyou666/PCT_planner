@@ -12,9 +12,16 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 # set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -march=native") # have to enable because of gtsam
 
+# 仅使用 ROS Humble 的 GTSAM，避免与 /usr/local 安装的 GTSAM 4.3 混用导致头文件重定义
+set(GTSAM_DIR "/opt/ros/humble/lib/cmake/GTSAM")
 find_package(GTSAM REQUIRED)
 find_package(Eigen3 REQUIRED)
 
+# 编译本库时不要搜索 /usr/local 下的 GTSAM，避免与 ROS 的 GTSAM 混用
+list(REMOVE_ITEM CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES "/usr/local/include")
+
+# 确保只使用 ROS 的 GTSAM 头文件：先加入 GTSAM 路径，避免 /usr/local 的 GTSAM 被优先包含
+include_directories(BEFORE ${GTSAM_INCLUDE_DIR})
 include_directories(
   src
   ${EIGEN3_INCLUDE_DIR}

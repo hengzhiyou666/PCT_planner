@@ -1,6 +1,6 @@
 #pragma once
 
-#include "gtsam/nonlinear/NoiseModelFactorN.h"
+#include "gtsam/nonlinear/NonlinearFactor.h"
 #include "trajectory_optimization/gpmp_optimizer/models/wnoa.hpp"
 
 class GPPriorFactorWnoa
@@ -19,8 +19,8 @@ class GPPriorFactorWnoa
 
   gtsam::Vector evaluateError(
       const gtsam::Vector4& x1, const gtsam::Vector4& x2,
-      gtsam::OptionalMatrixType H1 = OptionalNone,
-      gtsam::OptionalMatrixType H2 = OptionalNone) const override;
+      boost::optional<gtsam::Matrix&> H1 = boost::none,
+      boost::optional<gtsam::Matrix&> H2 = boost::none) const override;
 
   void verbose() {}
 

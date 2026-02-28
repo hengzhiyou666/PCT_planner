@@ -21,7 +21,7 @@ using PriorFactor4 = gtsam::PriorFactor<Vector4>;
 constexpr double kQc = 0.1;
 
 bool GPMPOptimizerWnoa::GenerateTrajectory(
-    const std::vector<PathPoint>& input_path, const double T) {
+    const std::vector<PathPoint>& input_path, const double /* T */) {
   auto t0 = std::chrono::high_resolution_clock::now();
   static auto sigma_initial = Diagonal::Sigmas(Vector4(0.001, 0.1, 0.001, 0.1));
   static auto sigma_goal = Diagonal::Sigmas(Vector4(0.001, 1, 0.001, 1));
@@ -61,8 +61,8 @@ bool GPMPOptimizerWnoa::GenerateTrajectory(
     opt_init_value_.col(col_index) = x1;
     opt_init_layer_(col_index) = path[i].layer;
     if (debug_) {
-      printf("path[%d/%d], layer: %d, height: %f\n", i, N - 1, path[i].layer,
-             path[i].height);
+      printf("path[%d/%d], layer: %ld, height: %f\n", i, N - 1,
+             static_cast<long>(path[i].layer), path[i].height);
     }
     col_index++;
     if (i < N - 1) {
@@ -76,12 +76,11 @@ bool GPMPOptimizerWnoa::GenerateTrajectory(
         opt_init_value_.col(col_index) = inter_x;
         if (debug_) {
           printf(
-              "path[%d/%d], layer: %d, %f, height: %f, height2: "
-              "%f, "
-              "hint%f, (%f, %f)\n",
-              col_index, opt_init_layer_.size() - 1, path[i].layer,
-              path[i].height, path[i + 1].height, height_hint, inter_x(0, 0),
-              inter_x(2, 0));
+              "path[%d/%zu], layer: %ld, height: %f, height2: %f, hint%f, "
+              "(%f, %f)\n",
+              col_index, opt_init_layer_.size() - 1,
+              static_cast<long>(path[i].layer), path[i].height,
+              path[i + 1].height, height_hint, inter_x(0, 0), inter_x(2, 0));
         }
 
         opt_init_layer_(col_index) = map_->UpdateLayerSafe(
@@ -184,7 +183,7 @@ bool GPMPOptimizerWnoa::GenerateTrajectory(
   opt_layers_ = Eigen::VectorXd::Zero(N + (N - 1) * interpolate_num_);
   opt_layers_(0) = path.front().layer;
   opt_layers_(opt_layers_.size() - 1) = path.back().layer;
-  for (int i = 0; i < obstacle_factor_idx.size(); ++i) {
+  for (size_t i = 0; i < obstacle_factor_idx.size(); ++i) {
     // printf("%d, %d, %d, %d\n", i + 1, N, obstacle_factor_idx.size(),
     //        obstacle_factor_idx[i]);
     if (obstacle_factor_idx[i] < 1e7) {
@@ -221,9 +220,9 @@ bool GPMPOptimizerWnoa::GenerateTrajectory(
 
   auto t1 = std::chrono::high_resolution_clock::now();
   printf(
-      "Optimization finished for N = %d at iteration %d, time elapsed: %f ms, "
+      "Optimization finished for N = %d at iteration %zu, time elapsed: %f ms, "
       "cost: %f\n",
-      N, opt.iterations(),
+      N, static_cast<size_t>(opt.iterations()),
       std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() /
           1000.0,
       opt.error());
@@ -336,7 +335,7 @@ Eigen::MatrixXd GPMPOptimizerWnoa::GPPriorTest(Vector4 x0, Vector4 xN,
       std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() /
           1000.0);
 
-  printf("GP prior optimization finished with iteration %d, error: %f\n",
-         opt.iterations(), opt.error());
+  printf("GP prior optimization finished with iteration %zu, error: %f\n",
+         static_cast<size_t>(opt.iterations()), opt.error());
   return result;
 }

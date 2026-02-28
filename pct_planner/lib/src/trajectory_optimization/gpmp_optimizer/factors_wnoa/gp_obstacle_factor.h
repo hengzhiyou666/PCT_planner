@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include "gtsam/nonlinear/NoiseModelFactorN.h"
+#include "gtsam/nonlinear/NonlinearFactor.h"
 #include "map_manager/dense_elevation_map.h"
 
 class GPObstacleFactorWnoa : public gtsam::NoiseModelFactor1<gtsam::Vector4> {
@@ -25,7 +25,7 @@ class GPObstacleFactorWnoa : public gtsam::NoiseModelFactor1<gtsam::Vector4> {
 
   gtsam::Vector evaluateError(
       const gtsam::Vector4& x1,
-      gtsam::OptionalMatrixType H1 = OptionalNone) const override;
+      boost::optional<gtsam::Matrix&> H1 = boost::none) const override;
 
   void verbose() { verbose_ = true; }
 

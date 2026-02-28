@@ -2,10 +2,9 @@
 
 gtsam::Vector GPInterpolateObstacleFactorWnoa::evaluateError(
     const gtsam::Vector4& x1, const gtsam::Vector4& x2,
-    gtsam::OptionalMatrixType H1,
-    gtsam::OptionalMatrixType H2) const {
+    boost::optional<gtsam::Matrix&> H1,
+    boost::optional<gtsam::Matrix&> H2) const {
   if (!initialized_) {
-    int init_layer = current_layer_;
     gtsam::Vector4 x_tmp = gp_interpolator_.Interpolate(x1, x2);
     current_layer_ = map_->UpdateLayerSafe(current_layer_, x_tmp(0, 0),
                                            x_tmp(2, 0), height_hint_);
@@ -23,7 +22,6 @@ gtsam::Vector GPInterpolateObstacleFactorWnoa::evaluateError(
   gtsam::Matrix14 H = Eigen::MatrixXd::Zero(1, 4);
   gtsam::Vector4 x_inter = gp_interpolator_.Interpolate(x1, x2, &J_x1, &J_x2);
 
-  int tmp_layer = current_layer_;
   cost = map_->GetValueBilinearSafe(current_layer_, x_inter(0, 0),
                                     x_inter(2, 0), height_hint_, &grad);
   current_layer_ = map_->UpdateLayerSafe(current_layer_, x_inter(0, 0),

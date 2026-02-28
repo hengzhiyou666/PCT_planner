@@ -14,9 +14,9 @@ class WnojTrajectoryInterpolator {
   Eigen::MatrixXd GenerateTrajectory(const int sub_sample_num) const;
 
  private:
-  double qc_ = 0.0;
-  double dt_ = 0.0;
-  int num_nodes_ = 0;
-  GPInterpolator interpolator_;
   Eigen::MatrixXd nodes_;
+  GPInterpolator interpolator_;
+  double dt_ = 0.0;
+  double qc_ = 0.0;
+  int num_nodes_ = 0;
 };

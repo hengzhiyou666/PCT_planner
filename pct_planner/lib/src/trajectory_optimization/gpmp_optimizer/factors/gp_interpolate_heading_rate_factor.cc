@@ -2,9 +2,8 @@
 
 gtsam::Vector GPInterpolateHeadingRateFactor::evaluateError(
     const gtsam::Vector6& x1, const gtsam::Vector6& x2,
-    gtsam::OptionalMatrixType H1,
-    gtsam::OptionalMatrixType H2) const {
-  double cost;
+    boost::optional<gtsam::Matrix&> H1,
+    boost::optional<gtsam::Matrix&> H2) const {
   gtsam::Matrix66 J_x1, J_x2;
   gtsam::Matrix16 H = Eigen::MatrixXd::Zero(1, 6);
   gtsam::Vector6 x_inter = gp_interpolator_.Interpolate(x1, x2, &J_x1, &J_x2);
