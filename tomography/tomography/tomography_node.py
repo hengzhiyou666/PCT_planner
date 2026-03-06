@@ -99,7 +99,6 @@ class Tomography(Node):
         self.center = np.zeros(2, dtype=np.float32)#保存为实例变量
         self.tomogram = Tomogram(scene_cfg)#保存为实例变量
 
-        print("########################### tomography_node.py的89行,加载和处理点云数据) ###########################", flush=True)
         self.get_logger().info(f"PCD file name: {self.pcd_file}")
         if self.pcd_file is None:
             print("########################### tomography_node.py的92行,没找到pcd文件 ###########################", flush=True)
@@ -110,9 +109,9 @@ class Tomography(Node):
             print("###########################tomography_node.py的97行,加载pcd文件完成###########################", flush=True)
 
         # Process
-        print("###########################tomography_node.py的100行,开始处理点云数据###########################", flush=True)
+        print("###########################tomography_node.py的100行,开始切片和方格化建图###########################", flush=True)
         self.process(points)
-        print("###########################tomography_node.py的103行,处理点云数据完成###########################", flush=True)
+        print("###########################tomography_node.py的103行,完成切片和方格化建图###########################", flush=True)
 
     def initROS(self):
         self.map_frame = self.cfg.ros.map_frame
@@ -143,6 +142,78 @@ class Tomography(Node):
 
         if points.shape[1] > 3:
             points = points[:, :3]
+
+        # default_xxx.pcd：默认基于“地面平面”向上裁剪 3m（避免高处噪声/天花板影响建图）
+        # 仅对 default 场景生效，避免影响其它预设场景
+        if getattr(self, "scene_name", "").lower() == "default":
+            before_n = int(points.shape[0])
+            print("开始裁减{} 3m以上的点云".format(self.pcd_file), flush=True)
+
+            plane_model = None  # (a, b, c, d) for ax+by+cz+d=0
+            try:
+                # 用下采样点云做地面平面估计，避免过慢
+                pcd_ds = o3d.geometry.PointCloud()
+                pcd_ds.points = o3d.utility.Vector3dVector(points.astype(np.float64))
+                pcd_ds = pcd_ds.voxel_down_sample(voxel_size=max(0.05, float(self.resolution)))
+
+                # 迭代分割多个平面，选择“最水平且内点最多”的平面作为地面
+                tmp = pcd_ds
+                best_inliers = 0
+                for _ in range(3):
+                    if len(tmp.points) < 200:
+                        break
+                    model, inliers = tmp.segment_plane(
+                        distance_threshold=0.05,
+                        ransac_n=3,
+                        num_iterations=300
+                    )
+                    if len(inliers) == 0:
+                        break
+                    a, b, c, d = model
+                    norm = float(np.sqrt(a * a + b * b + c * c))
+                    if norm <= 1e-9:
+                        break
+                    # “水平”判定：法向量与 Z 轴夹角小（|c| 接近 1）
+                    horizontal_score = abs(float(c) / norm)
+                    if horizontal_score > 0.90 and len(inliers) > best_inliers:
+                        best_inliers = len(inliers)
+                        plane_model = (float(a), float(b), float(c), float(d))
+                    # 移除本次平面内点，继续找下一平面（类似聚类分出多个平面）
+                    tmp = tmp.select_by_index(inliers, invert=True)
+
+            except Exception as e:
+                self.get_logger().warn(f"[default] Ground plane detection failed, fallback to ground_h: {e}")
+
+            if plane_model is not None:
+                a, b, c, d = plane_model
+                n = np.array([a, b, c], dtype=np.float32)
+                n_norm = float(np.linalg.norm(n))
+                # 统一法向量朝上（c>0），保证“高度”是朝上的正值
+                if c < 0:
+                    a, b, c, d = -a, -b, -c, -d
+                    n = -n
+                n_norm = float(np.linalg.norm(n))
+                # 点到平面的有符号距离（朝上为正），即“相对地面高度”
+                height = (points[:, 0] * a + points[:, 1] * b + points[:, 2] * c + d) / max(n_norm, 1e-6)
+                points = points[height <= 3.0]
+                self.get_logger().info(
+                    f"[default] Ground plane: {a:.4f}x+{b:.4f}y+{c:.4f}z+{d:.4f}=0, "
+                    f"kept height<=3.0m"
+                )
+            else:
+                # 回退：按 ground_h 裁剪（旧逻辑）
+                z_max = float(self.ground_h) + 3.0
+                points = points[points[:, 2] <= z_max]
+                self.get_logger().info(f"[default] Fallback crop with z <= {z_max:.2f}m (ground_h based)")
+
+            after_n = int(points.shape[0])
+            print("已去除3m以上的点云", flush=True)
+            self.get_logger().info(f"[default] Crop points: {before_n} -> {after_n}")
+            if after_n == 0:
+                raise ValueError(
+                    "[default] All points were cropped by the 3m filter. "
+                    "Please check point cloud frame / ground plane detection."
+                )
         
         self.points_max = np.max(points, axis=0)
         self.points_min = np.min(points, axis=0)           
