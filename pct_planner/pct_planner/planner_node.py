@@ -214,11 +214,8 @@ class PCTPlanner(Node):
         return f"{prefix}条路径的一系列坐标为："
 
     def _export_z(self, z_value: float) -> float:
-        """导出到 txt 时的 z：减去之前加的高度偏移量（如 slice_h0）"""
-        offset = getattr(self.planner, "slice_h0", None)
-        if offset is None:
-            return float(z_value)
-        return float(z_value - offset)
+        """导出到 txt 时的 z：统一写为 0"""
+        return 0.0
 
     def _append_to_files(self, traj_3d: np.ndarray, seg_idx: int):
         # “整体路径.txt”：始终保存当前轮的整体路径坐标（所有段拼接）
