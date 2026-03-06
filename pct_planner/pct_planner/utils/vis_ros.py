@@ -11,9 +11,10 @@ def traj2ros(traj_3d):
         pose = PoseStamped()
         pose.header.stamp = path.header.stamp
         pose.header.frame_id = path.header.frame_id
-        pose.pose.position.x = traj_3d[i, 0]
-        pose.pose.position.y = traj_3d[i, 1]
-        pose.pose.position.z = traj_3d[i, 2]
+        # ROS2 Humble Python message fields require builtin float, not numpy scalar
+        pose.pose.position.x = float(traj_3d[i, 0])
+        pose.pose.position.y = float(traj_3d[i, 1])
+        pose.pose.position.z = float(traj_3d[i, 2])
         pose.pose.orientation.x = 0.0
         pose.pose.orientation.y = 0.0
         pose.pose.orientation.z = 0.0

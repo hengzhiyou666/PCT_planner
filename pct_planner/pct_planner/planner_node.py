@@ -7,7 +7,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
 from nav_msgs.msg import Path
 from visualization_msgs.msg import Marker
-from geometry_msgs.msg import Point, PointStamped
+from geometry_msgs.msg import Point, PointStamped, PoseStamped
 
 from pct_planner.utils import traj2ros
 from pct_planner.planner_wrapper import TomogramPlanner
@@ -51,10 +51,35 @@ class PCTPlanner(Node):
         self.bounds_marker_pub = self.create_publisher(Marker, "/pct_map_bounds", qos)
         self.bounds_marker_timer = self.create_timer(1.0, self.publish_bounds_marker)
 
-        # 交互式起点 / 终点（来自 RViz Publish Point）
+        # 交互式取点（来自 RViz Publish Point）：起点 + 无限途径点
+        self.has_start = False
+        self.points_seq = []  # 已确认的点序列，每个元素为 np.array([x,y,z])
+
+        # 旧逻辑兼容字段（避免旧函数被调用时报错）
         self.point1_begin = None  # 起点坐标 [x, y, z]
         self.point2_end = None    # 终点坐标 [x, y, z]
-        self.click_count = 0      # 点击计数器
+
+        # 累计大路径（用于 RViz 不丢弃旧路径）
+        self.big_path_traj = None  # shape: (N,3) numpy
+        self.segment_count = 0
+        self.segments = []  # 每段轨迹的列表，用于重写带标题的文件
+
+        # 输出文件（写到启动命令所在目录）
+        cwd = os.getcwd()
+        self.big_path_file = os.path.join(cwd, "整体路径.txt")
+        self.current_multi_path_file = None  # 例如 “2条路径.txt”、“3条路径.txt”
+
+        # 启动时删除旧的路径文件，防止在旧文件上追加
+        for fname in os.listdir(cwd):
+            if (
+                fname == "整体路径.txt"
+                or fname.endswith("条路径.txt")
+                or fname in ("onebigpath.txt", "onebigpath_with_title.txt")
+            ):
+                try:
+                    os.remove(os.path.join(cwd, fname))
+                except OSError:
+                    pass
 
         # 订阅 RViz 的 Publish Point 按钮
         self.clicked_point_sub = self.create_subscription(
@@ -63,10 +88,18 @@ class PCTPlanner(Node):
             self.clicked_point_callback,
             10,
         )
-        
-        # 启动时先按默认起点/终点规划一次
-        # 规划完成后会在 pct_plan() 中显示"请输入导航起点："
-        self.pct_plan()
+
+        # 订阅 RViz 的 2D Nav Goal（结束本轮并清空显示）
+        self.goal_pose_sub = self.create_subscription(
+            PoseStamped,
+            "/goal_pose",
+            self.goal_pose_callback,
+            10,
+        )
+
+        # 启动提示：等待用户在 RViz 中点击取点
+        print("请输入起点：", flush=True)
+        self.get_logger().info("\n请输入起点：")
 
     def configure_scene(self, scene_name):
         scene_name = scene_name.strip().capitalize() if scene_name else ''
@@ -124,24 +157,156 @@ class PCTPlanner(Node):
                     self.get_logger().warn(
                         f"Could not query height at [{x:.2f}, {y:.2f}], using z=0.0"
                     )
-        
-        # 更新点击计数
-        self.click_count += 1
-        
-        # 根据点击次数决定是起点还是终点
-        if self.click_count % 2 == 1:  # 奇数次：更新起点
-            print("########################### 得到起点坐标 ###########################", flush=True)
-            self.point1_begin = np.array([x, y, z], dtype=np.float32)
-            self.get_logger().info(f"导航起点坐标为：({x:.2f}, {y:.2f}, {z:.2f})")
-            self.get_logger().info("请输入目的地位置：")
-        else:  # 偶数次：更新终点并规划
-            print("########################### 得到目标点坐标 ###########################", flush=True)
-            self.point2_end = np.array([x, y, z], dtype=np.float32)
-            self.get_logger().info(f"目的地坐标为：({x:.2f}, {y:.2f}, {z:.2f})")
-            self.get_logger().info("下面进行路径规划：")
-            
-            # 进行路径规划
-            self.plan_with_points()
+
+        p = np.array([x, y, z], dtype=np.float32)
+
+        # 第一次点击：设置起点
+        if not self.has_start:
+            self.points_seq = [p]
+            self.has_start = True
+            self.get_logger().info(f"起点坐标为：({x:.2f}, {y:.2f}, {z:.2f})")
+            print("请输入第一个途径点：", flush=True)
+            self.get_logger().info("请输入第一个途径点：")
+            return
+
+        # 后续每次点击：作为“下一个途径点”，规划一段并累计显示/写文件
+        prev = self.points_seq[-1]
+        curr = p
+        self.points_seq.append(curr)
+        self.get_logger().info(f"途径点为：({x:.2f}, {y:.2f}, {z:.2f})")
+
+        ok = self._plan_and_accumulate(prev, curr)
+        if not ok:
+            # 规划失败：回退该点，继续等待用户重新点同一个途径点
+            self.points_seq.pop()
+            return
+
+        # 成功后继续提示下一个途径点（可无限输入）
+        print("请输入下一个途径点：", flush=True)
+        self.get_logger().info("请输入下一个途径点：")
+        return
+
+    def goal_pose_callback(self, msg: PoseStamped):
+        """RViz 2D Nav Goal：结束本轮规划并清空 RViz 显示的所有路径"""
+        # 清空 Path 显示：发布一个空 Path 即可让 RViz 的 Path 显示清除
+        empty = Path()
+        empty.header.stamp = self.get_clock().now().to_msg()
+        empty.header.frame_id = "map"
+        self.path_pub.publish(empty)
+
+        # 重置本轮状态（文件不清空，只是停止本轮累积；下一轮从“起点”重新开始）
+        self.has_start = False
+        self.points_seq = []
+        self.big_path_traj = None
+        self.segment_count = 0
+        self.segments = []
+        self.current_multi_path_file = None
+
+        self.get_logger().info("已清除所有规划路径，结束本轮全局路径规划。")
+        print("请输入起点：", flush=True)
+        self.get_logger().info("\n请输入起点：")
+
+    def _segment_title(self, k: int) -> str:
+        # 1->第一, 2->第二, 3->第三 ...（够用即可）
+        cn = {1: "第一", 2: "第二", 3: "第三", 4: "第四", 5: "第五",
+              6: "第六", 7: "第七", 8: "第八", 9: "第九", 10: "第十"}
+        prefix = cn.get(k, f"第{k}")
+        return f"{prefix}条路径的一系列坐标为："
+
+    def _export_z(self, z_value: float) -> float:
+        """导出到 txt 时的 z：减去之前加的高度偏移量（如 slice_h0）"""
+        offset = getattr(self.planner, "slice_h0", None)
+        if offset is None:
+            return float(z_value)
+        return float(z_value - offset)
+
+    def _append_to_files(self, traj_3d: np.ndarray, seg_idx: int):
+        # “整体路径.txt”：始终保存当前轮的整体路径坐标（所有段拼接）
+        if self.big_path_traj is not None:
+            with open(self.big_path_file, "w", encoding="utf-8") as f1:
+                for pt in self.big_path_traj:
+                    z_out = self._export_z(pt[2])
+                    f1.write(f"{pt[0]:.6f} {pt[1]:.6f} {z_out:.6f}\n")
+
+        # “N条路径.txt”：根据当前段数命名，写入每段前加标题行的坐标
+        cwd = os.getcwd()
+        new_multi = os.path.join(cwd, f"{seg_idx}条路径.txt")
+        # 删除上一轮 “(N-1)条路径.txt”
+        if seg_idx > 1:
+            old_multi = os.path.join(cwd, f"{seg_idx-1}条路径.txt")
+            if os.path.exists(old_multi):
+                try:
+                    os.remove(old_multi)
+                except OSError:
+                    pass
+        # 重写当前 “N条路径.txt” 文件，包含从第1段到当前段
+        with open(new_multi, "w", encoding="utf-8") as f2:
+            for k, seg in enumerate(self.segments, start=1):
+                f2.write(self._segment_title(k) + "\n")
+                for pt in seg:
+                    z_out = self._export_z(pt[2])
+                    f2.write(f"{pt[0]:.6f} {pt[1]:.6f} {z_out:.6f}\n")
+        self.current_multi_path_file = new_multi
+
+    def _point_in_bounds(self, p_xyz: np.ndarray) -> bool:
+        if self.planner.center is None or self.planner.map_dim is None or self.planner.resolution is None:
+            return True
+        dim_x, dim_y = self.planner.map_dim
+        center_x, center_y = self.planner.center
+        resolution = self.planner.resolution
+        half_extent_x = dim_x * resolution / 2.0
+        half_extent_y = dim_y * resolution / 2.0
+        min_x = center_x - half_extent_x
+        max_x = center_x + half_extent_x
+        min_y = center_y - half_extent_y
+        max_y = center_y + half_extent_y
+        return (min_x <= float(p_xyz[0]) <= max_x) and (min_y <= float(p_xyz[1]) <= max_y)
+
+    def _plan_and_accumulate(self, p_from: np.ndarray, p_to: np.ndarray) -> bool:
+        """规划一段路径并累计发布/写文件。成功返回 True。"""
+        # 确保 tomogram 已加载
+        if not self.planner.is_tomogram_loaded():
+            self.get_logger().info(f"Loading tomogram: {self.tomo_file}")
+            self.planner.loadTomogram(self.tomo_file)
+
+        # 边界检查（避免 C++ 越界崩）
+        if not self._point_in_bounds(p_from) or not self._point_in_bounds(p_to):
+            self.get_logger().warn("规划失败：点不在有效范围内，请在 tomogram 范围内重新取点。")
+            return False
+
+        start_xy = p_from[:2]
+        end_xy = p_to[:2]
+        start_z = float(p_from[2])
+        end_z = float(p_to[2])
+
+        self.get_logger().info("下面进行路径规划：")
+        traj_3d = self.planner.plan(start_xy, end_xy, start_z, end_z)
+        if traj_3d is None or len(traj_3d) == 0:
+            self.get_logger().warn("规划失败：无法生成可行轨迹，请重新取点。")
+            return False
+
+        traj_3d = np.asarray(traj_3d, dtype=np.float32)
+        self.segment_count += 1
+        self.segments.append(traj_3d)
+
+        # 累计大路径：后续段去掉第一个点，避免重复
+        if self.big_path_traj is None:
+            self.big_path_traj = traj_3d
+        else:
+            self.big_path_traj = np.vstack([self.big_path_traj, traj_3d[1:]])
+
+        # 发布累计路径（RViz 中不会丢弃之前段）
+        self.path_pub.publish(traj2ros(self.big_path_traj))
+
+        # 写文件（写本段坐标；大文件会自然累加）
+        self._append_to_files(traj_3d, self.segment_count)
+
+        self.get_logger().info(
+            f"已生成第 {self.segment_count} 段全局路径，并已追加写入 "
+            f"{os.path.basename(self.big_path_file)} / "
+            f"{os.path.basename(self.current_multi_path_file) if self.current_multi_path_file else ''}"
+        )
+        return True
 
     def publish_bounds_marker(self):
         """在 RViz 中发布可选点范围矩形框（基于 tomogram 的中心、尺寸、分辨率）"""
