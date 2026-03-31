@@ -10,6 +10,12 @@ from typing import Optional
 import numpy as np
 import open3d as o3d
 import importlib
+from typing import Any, Dict
+
+try:
+    import yaml
+except Exception:
+    yaml = None
 
   
 import rclpy
@@ -38,6 +44,74 @@ from .config import scene
 
 
 class Tomography(Node):
+    @staticmethod
+    def _rotation_align_vector_to_z(vec: np.ndarray) -> np.ndarray:
+        """Return rotation matrix R such that R @ vec aligns to +Z."""
+        v = np.asarray(vec, dtype=np.float64)
+        n = np.linalg.norm(v)
+        if n <= 1e-9:
+            return np.eye(3, dtype=np.float64)
+        v = v / n
+        z = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+        c = float(np.dot(v, z))
+        c = max(-1.0, min(1.0, c))
+        if c > 1.0 - 1e-9:
+            return np.eye(3, dtype=np.float64)
+        if c < -1.0 + 1e-9:
+            # 180 deg: choose any axis orthogonal to v
+            axis = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+            if abs(float(np.dot(axis, v))) > 0.9:
+                axis = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+            axis = axis - np.dot(axis, v) * v
+            axis = axis / max(np.linalg.norm(axis), 1e-9)
+            K = np.array(
+                [[0.0, -axis[2], axis[1]],
+                 [axis[2], 0.0, -axis[0]],
+                 [-axis[1], axis[0], 0.0]],
+                dtype=np.float64,
+            )
+            return np.eye(3, dtype=np.float64) + 2.0 * (K @ K)
+
+        axis = np.cross(v, z)
+        s = float(np.linalg.norm(axis))
+        axis = axis / max(s, 1e-9)
+        K = np.array(
+            [[0.0, -axis[2], axis[1]],
+             [axis[2], 0.0, -axis[0]],
+             [-axis[1], axis[0], 0.0]],
+            dtype=np.float64,
+        )
+        # Rodrigues: R = I + sin(theta)K + (1-cos(theta))K^2, where cos(theta)=c, sin(theta)=s
+        return np.eye(3, dtype=np.float64) + s * K + (1.0 - c) * (K @ K)
+
+    @staticmethod
+    def _align_points_to_ground(points: np.ndarray, plane_model) -> tuple[np.ndarray, float]:
+        """
+        Align ground plane normal to +Z and return (aligned_points, ground_h_on_aligned_frame).
+        ground_h_on_aligned_frame is the z of one point on plane after alignment.
+        """
+        a, b, c, d = [float(x) for x in plane_model]
+        n = np.array([a, b, c], dtype=np.float64)
+        n_norm = float(np.linalg.norm(n))
+        if n_norm <= 1e-9:
+            return points, 0.0
+        if c < 0.0:
+            n = -n
+            d = -d
+        n_unit = n / max(np.linalg.norm(n), 1e-9)
+
+        # Point on plane: p0 = -d * n / ||n||^2
+        p0 = (-d / max(np.dot(n, n), 1e-9)) * n
+        R = Tomography._rotation_align_vector_to_z(n_unit)
+
+        center = np.mean(points, axis=0).astype(np.float64)
+        pts = points.astype(np.float64)
+        pts_rot = ((R @ (pts - center).T).T + center).astype(np.float32)
+
+        p0_rot = (R @ (p0 - center)) + center
+        ground_h = float(p0_rot[2])
+        return pts_rot, ground_h
+
     def __init__(self, cfg: Config):
         print("########################### 进入tomography_node.py的41行的Tomography()类的__init__()初始化函数 ###########################", flush=True)
         super().__init__('pointcloud_tomography')#初始化节点，设置节点名称为pointcloud_tomography
@@ -72,6 +146,35 @@ class Tomography(Node):
         scene_cfg: scene.Scene = getattr(scene_module, scene_class_name)()#获取scene_module对象中的scene_class_name类，并实例化
 
         self.cfg = cfg #保存为实例变量，等号右边的cfg作用域仅限于__init__,所以需要赋值给实例变量
+
+        # --- 从 YAML 读取 default_* 点云的 z 轴裁剪配置 ---
+        # 仅在 scene_name == 'default' 时会生效
+        self.if_cut_lidar_z_points: bool = False
+        self.lidar_points_z_min: float = -1.0
+        self.lidar_points_z_max: float = 3.0
+
+        try:
+            cfg_dir = pathlib.Path(__file__).resolve().parent / "config"
+            yaml_path = cfg_dir / "lidar_filter.yaml"
+            if yaml_path.exists() and yaml is not None:
+                with open(yaml_path, "r", encoding="utf-8") as f:
+                    data: Dict[str, Any] = yaml.safe_load(f) or {}
+                # 允许直接扁平写，或放在 default_pcd_filter 节点下
+                node = data.get("default_pcd_filter", data) or {}
+                self.if_cut_lidar_z_points = bool(node.get("if_cut_lidar_z_points", False))
+                self.lidar_points_z_min = float(node.get("lidar_points_z_min", -1.0))
+                self.lidar_points_z_max = float(node.get("lidar_points_z_max", 3.0))
+            else:
+                self.get_logger().info(
+                    "[lidar_filter] YAML not found or PyYAML missing, "
+                    "using defaults: if_cut_lidar_z_points=False, "
+                    "z_min=-1.0, z_max=3.0"
+                )
+        except Exception as e:
+            self.get_logger().warn(
+                f"[lidar_filter] Failed to load lidar_filter.yaml, "
+                f"fallback to defaults (-1.0~3.0, disabled). Error: {e}"
+            )
 
         self.qos = QoSProfile(
             depth=1,
@@ -137,6 +240,7 @@ class Tomography(Node):
     def loadPCD(self):
         pcd = o3d.io.read_point_cloud(f"{self.rsg_root}/pcd/{self.pcd_file}")
         points = np.asarray(pcd.points).astype(np.float32)
+        ground_h_for_slice = float(self.ground_h)
 
         self.get_logger().info(f"PCD points: {points.shape[0]}")
 
@@ -147,7 +251,7 @@ class Tomography(Node):
         # 仅对 default 场景生效，避免影响其它预设场景
         if getattr(self, "scene_name", "").lower() == "default":
             before_n = int(points.shape[0])
-            print("开始裁减{} 3m以上的点云".format(self.pcd_file), flush=True)
+            print("########################### default 场景：开始估计地面平面，并根据 YAML 参数决定是否裁剪 z 轴 ###########################", flush=True)
 
             plane_model = None  # (a, b, c, d) for ax+by+cz+d=0
             try:
@@ -184,40 +288,63 @@ class Tomography(Node):
             except Exception as e:
                 self.get_logger().warn(f"[default] Ground plane detection failed, fallback to ground_h: {e}")
 
+            # --- 基于地面平面 / ground_h 的 z 区间裁剪，仅在 if_cut_lidar_z_points 为 True 时生效 ---
+            after_n = before_n
             if plane_model is not None:
-                a, b, c, d = plane_model
-                n = np.array([a, b, c], dtype=np.float32)
-                n_norm = float(np.linalg.norm(n))
-                # 统一法向量朝上（c>0），保证“高度”是朝上的正值
-                if c < 0:
-                    a, b, c, d = -a, -b, -c, -d
-                    n = -n
-                n_norm = float(np.linalg.norm(n))
-                # 点到平面的有符号距离（朝上为正），即“相对地面高度”
-                height = (points[:, 0] * a + points[:, 1] * b + points[:, 2] * c + d) / max(n_norm, 1e-6)
-                points = points[height <= 3.0]
-                self.get_logger().info(
-                    f"[default] Ground plane: {a:.4f}x+{b:.4f}y+{c:.4f}z+{d:.4f}=0, "
-                    f"kept height<=3.0m"
-                )
-            else:
-                # 回退：按 ground_h 裁剪（旧逻辑）
-                z_max = float(self.ground_h) + 3.0
-                points = points[points[:, 2] <= z_max]
-                self.get_logger().info(f"[default] Fallback crop with z <= {z_max:.2f}m (ground_h based)")
+                # 先把点云旋转到“地面平面水平”的坐标系，切片基准随检测到的地面平面
+                points, ground_h_for_slice = self._align_points_to_ground(points, plane_model)
+                rel_height = points[:, 2] - ground_h_for_slice
 
-            after_n = int(points.shape[0])
-            print("已去除3m以上的点云", flush=True)
+                if self.if_cut_lidar_z_points:
+                    z_min = float(self.lidar_points_z_min)
+                    z_max = float(self.lidar_points_z_max)
+                    mask = (rel_height >= z_min) & (rel_height <= z_max)
+                    points = points[mask]
+                    after_n = int(points.shape[0])
+                    a, b, c, d = plane_model
+                    self.get_logger().info(
+                        f"[default] Ground plane: {a:.4f}x+{b:.4f}y+{c:.4f}z+{d:.4f}=0, "
+                        f"aligned-to-ground and keep {z_min:.2f}m <= relative_height <= {z_max:.2f}m"
+                    )
+                else:
+                    # 只估计地面，不裁剪
+                    self.get_logger().info(
+                        f"[default] Ground plane detected, but if_cut_lidar_z_points=False, "
+                        f"aligned-to-ground for slicing and skip z filtering (all points kept)."
+                    )
+            else:
+                # 回退：用 ground_h 作为“地面高度”的近似
+                if self.if_cut_lidar_z_points:
+                    z_min = float(self.lidar_points_z_min)
+                    z_max = float(self.lidar_points_z_max)
+                    # 相对 ground_h 的高度
+                    rel_z = points[:, 2] - float(self.ground_h)
+                    mask = (rel_z >= z_min) & (rel_z <= z_max)
+                    points = points[mask]
+                    after_n = int(points.shape[0])
+                    self.get_logger().info(
+                        f"[default] Fallback z filter with ground_h={self.ground_h:.2f}m, "
+                        f"keep {z_min:.2f}m <= (z-ground_h) <= {z_max:.2f}m"
+                    )
+                else:
+                    self.get_logger().info(
+                        f"[default] Ground plane not found and if_cut_lidar_z_points=False, "
+                        f"skip z filtering (all points kept)."
+                    )
+
+            print("########################### default 场景 z 裁剪完成 ###########################", flush=True)
             self.get_logger().info(f"[default] Crop points: {before_n} -> {after_n}")
-            if after_n == 0:
+            if self.if_cut_lidar_z_points and after_n == 0:
                 raise ValueError(
-                    "[default] All points were cropped by the 3m filter. "
-                    "Please check point cloud frame / ground plane detection."
+                    "[default] All points were cropped by z filter. "
+                    "Please check YAML config (lidar_points_z_min/max) and point cloud frame."
                 )
+            # default 场景下，若成功检测到平面，则切片地面高度基准使用检测值
+            self.ground_h = float(ground_h_for_slice)
         
         self.points_max = np.max(points, axis=0)
         self.points_min = np.min(points, axis=0)           
-        self.points_min[-1] = self.ground_h
+        self.points_min[-1] = ground_h_for_slice
         self.map_dim_x = int(np.ceil((self.points_max[0] - self.points_min[0]) / self.resolution)) + 4
         self.map_dim_y = int(np.ceil((self.points_max[1] - self.points_min[1]) / self.resolution)) + 4
         n_slice_init = int(np.ceil((self.points_max[2] - self.points_min[2]) / self.slice_dh))

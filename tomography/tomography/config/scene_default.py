@@ -12,7 +12,7 @@ class SceneDefault(Scene):
         # --- 地图与切片 ---
         self.map.resolution = 0.2   # 平面栅格分辨率 [m/格]，越小越精细、计算量越大
         self.map.ground_h = 0.1      # 地面高度 z 基准，低于此值的点云会被当作地面处理
-        self.map.slice_dh = 1.0      # 垂直切片高度间隔 [m]，决定 tomogram 层数与每层厚度
+        self.map.slice_dh = 3.0      # 垂直切片高度间隔 [m]，决定 tomogram 层数与每层厚度
 
         # --- 可通行性判定 ---
         self.trav.kernel_size = 1   # 局部窗口大小（邻域核边长），用于平滑/统计可通行性

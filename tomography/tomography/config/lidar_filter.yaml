@@ -1,0 +1,11 @@
+default_pcd_filter:
+  # 是否对 default_*.pcd 的点云做 z 轴裁剪
+  # true  : 按下面的 lidar_points_z_min / lidar_points_z_max 相对“地面平面”的高度范围保留点
+  # false : 只估计地面平面，但不做任何 z 轴裁剪
+  if_cut_lidar_z_points: true
+
+  # 相对地面平面的最小/最大高度（单位：米），只在 if_cut_lidar_z_points 为 true 时生效
+  # 例如：-1.0 表示地面以下 1m，3.0 表示地面以上 3m
+  lidar_points_z_min: -1.0
+  lidar_points_z_max: 3.0
+
