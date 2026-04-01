@@ -67,13 +67,14 @@ class PCTPlanner(Node):
         # 输出文件（写到启动命令所在目录）
         cwd = os.getcwd()
         self.big_path_file = os.path.join(cwd, "整体路径.txt")
-        self.current_multi_path_file = None  # 例如 “pct_path_2条路径.txt”、“pct_path_3条路径.txt”
+        self.current_multi_path_file = None  # 例如 “pct_path_2paths.txt”、“pct_path_3paths.txt”
 
         # 启动时删除旧的路径文件，防止在旧文件上追加
         for fname in os.listdir(cwd):
             if (
                 fname == "整体路径.txt"
                 or fname.endswith("条路径.txt")
+                or (fname.startswith("pct_path_") and fname.endswith("paths.txt"))
                 or fname in ("onebigpath.txt", "onebigpath_with_title.txt")
             ):
                 try:
@@ -207,7 +208,7 @@ class PCTPlanner(Node):
         self.get_logger().info("\n请输入起点：")
 
     def _segment_title(self, k: int) -> str:
-        return f"path{k}："
+        return f"path{k}:"
 
     def _export_z(self, z_value: float) -> float:
         """导出到 txt 时的 z：保持原始数值"""
@@ -221,18 +222,18 @@ class PCTPlanner(Node):
                     z_out = self._export_z(pt[2])
                     f1.write(f"{pt[0]:.6f} {pt[1]:.6f} {z_out:.6f}\n")
 
-        # “pct_path_N条路径.txt”：根据当前段数命名，写入每段前加 path1：/path2： 标题行
+        # “pct_path_Npaths.txt”：根据当前段数命名，写入每段前加 path1:/path2: 标题行
         cwd = os.getcwd()
-        new_multi = os.path.join(cwd, f"pct_path_{seg_idx}条路径.txt")
-        # 删除上一轮 “pct_path_(N-1)条路径.txt”
+        new_multi = os.path.join(cwd, f"pct_path_{seg_idx}paths.txt")
+        # 删除上一轮 “pct_path_(N-1)paths.txt”
         if seg_idx > 1:
-            old_multi = os.path.join(cwd, f"pct_path_{seg_idx-1}条路径.txt")
+            old_multi = os.path.join(cwd, f"pct_path_{seg_idx-1}paths.txt")
             if os.path.exists(old_multi):
                 try:
                     os.remove(old_multi)
                 except OSError:
                     pass
-        # 重写当前 pct_path_N条路径.txt，包含从第1段到当前段
+        # 重写当前 pct_path_Npaths.txt，包含从第1段到当前段
         with open(new_multi, "w", encoding="utf-8") as f2:
             for k, seg in enumerate(self.segments, start=1):
                 f2.write(self._segment_title(k) + "\n")
