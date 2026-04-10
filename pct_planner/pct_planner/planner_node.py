@@ -214,11 +214,22 @@ class PCTPlanner(Node):
         """导出到 txt 时的 z：保持原始数值"""
         return float(z_value)
 
+    def _traj_for_local_export(self, traj_3d: np.ndarray) -> np.ndarray:
+        """导出到本地 txt 前，将轨迹转换到点云原始坐标系（若可用）。"""
+        if hasattr(self, "planner") and hasattr(self.planner, "transform_traj_to_original_frame"):
+            try:
+                return self.planner.transform_traj_to_original_frame(traj_3d)
+            except Exception as e:
+                self.get_logger().warn(f"Transform to original frame failed, fallback to aligned frame: {e}")
+                return traj_3d
+        return traj_3d
+
     def _append_to_files(self, traj_3d: np.ndarray, seg_idx: int):
         # “整体路径.txt”：始终保存当前轮的整体路径坐标（所有段拼接）
         if self.big_path_traj is not None:
+            export_big = self._traj_for_local_export(self.big_path_traj)
             with open(self.big_path_file, "w", encoding="utf-8") as f1:
-                for pt in self.big_path_traj:
+                for pt in export_big:
                     z_out = self._export_z(pt[2])
                     f1.write(f"{pt[0]:.6f} {pt[1]:.6f} {z_out:.6f}\n")
 
@@ -237,7 +248,8 @@ class PCTPlanner(Node):
         with open(new_multi, "w", encoding="utf-8") as f2:
             for k, seg in enumerate(self.segments, start=1):
                 f2.write(self._segment_title(k) + "\n")
-                for pt in seg:
+                export_seg = self._traj_for_local_export(seg)
+                for pt in export_seg:
                     z_out = self._export_z(pt[2])
                     f2.write(f"{pt[0]:.6f} {pt[1]:.6f} {z_out:.6f}\n")
         self.current_multi_path_file = new_multi
@@ -497,6 +509,16 @@ class PCTPlanner(Node):
         reason = ""
 
         if traj_3d is not None:
+            traj_3d = np.asarray(traj_3d, dtype=np.float32)
+            # 与交互式流程保持一致：成功规划后自动累计并落盘
+            self.segment_count += 1
+            self.segments.append(traj_3d)
+            if self.big_path_traj is None:
+                self.big_path_traj = traj_3d
+            else:
+                self.big_path_traj = np.vstack([self.big_path_traj, traj_3d[1:]])
+            self._append_to_files(traj_3d, self.segment_count)
+
             self.path_pub.publish(traj2ros(traj_3d))
             self.get_logger().info("Trajectory published")
             # 在提示前加一个换行，视觉上更清晰

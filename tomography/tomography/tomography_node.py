@@ -85,7 +85,7 @@ class Tomography(Node):
         return np.eye(3, dtype=np.float64) + s * K + (1.0 - c) * (K @ K)
 
     @staticmethod
-    def _align_points_to_ground(points: np.ndarray, plane_model) -> tuple[np.ndarray, float]:
+    def _align_points_to_ground(points: np.ndarray, plane_model) -> tuple[np.ndarray, float, np.ndarray, np.ndarray]:
         """
         Align ground plane normal to +Z and return (aligned_points, ground_h_on_aligned_frame).
         ground_h_on_aligned_frame is the z of one point on plane after alignment.
@@ -94,7 +94,7 @@ class Tomography(Node):
         n = np.array([a, b, c], dtype=np.float64)
         n_norm = float(np.linalg.norm(n))
         if n_norm <= 1e-9:
-            return points, 0.0
+            return points, 0.0, np.eye(3, dtype=np.float64), np.zeros(3, dtype=np.float64)
         if c < 0.0:
             n = -n
             d = -d
@@ -110,7 +110,7 @@ class Tomography(Node):
 
         p0_rot = (R @ (p0 - center)) + center
         ground_h = float(p0_rot[2])
-        return pts_rot, ground_h
+        return pts_rot, ground_h, R, center
 
     def __init__(self, cfg: Config):
         print("########################### 进入tomography_node.py的41行的Tomography()类的__init__()初始化函数 ###########################", flush=True)
@@ -201,6 +201,10 @@ class Tomography(Node):
 
         self.center = np.zeros(2, dtype=np.float32)#保存为实例变量
         self.tomogram = Tomogram(scene_cfg)#保存为实例变量
+        # default 场景下的坐标变换（original -> aligned），用于导出给 planner 做逆变换
+        self.default_align_enabled = False
+        self.default_align_rotation = np.eye(3, dtype=np.float64)
+        self.default_align_center = np.zeros(3, dtype=np.float64)
 
         self.get_logger().info(f"PCD file name: {self.pcd_file}")
         if self.pcd_file is None:
@@ -292,7 +296,10 @@ class Tomography(Node):
             after_n = before_n
             if plane_model is not None:
                 # 先把点云旋转到“地面平面水平”的坐标系，切片基准随检测到的地面平面
-                points, ground_h_for_slice = self._align_points_to_ground(points, plane_model)
+                points, ground_h_for_slice, R_align, c_align = self._align_points_to_ground(points, plane_model)
+                self.default_align_enabled = True
+                self.default_align_rotation = R_align
+                self.default_align_center = c_align
                 rel_height = points[:, 2] - ground_h_for_slice
 
                 if self.if_cut_lidar_z_points:
@@ -421,6 +428,12 @@ class Tomography(Node):
             'center': self.center,
             'slice_h0': self.slice_h0,
             'slice_dh': self.slice_dh,
+            # default 场景可选：记录 original->aligned 变换，供 planner 导出原始坐标系路径
+            'default_align': {
+                'enabled': bool(getattr(self, "default_align_enabled", False)),
+                'rotation_aligned_from_original': getattr(self, "default_align_rotation", np.eye(3)).tolist(),
+                'center': getattr(self, "default_align_center", np.zeros(3)).tolist(),
+            },
         }
         file_name = map_file + '.pickle'
         with open(self.export_dir + file_name, 'wb') as handle:

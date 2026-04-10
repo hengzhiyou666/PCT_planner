@@ -46,6 +46,10 @@ class TomogramPlanner(object):
         self.elev_g = None           # 原始地面高度图（含 nan）
         self.elev_g_clean = None     # 去 nan 的地面高度图（nan -> -100）
         self.elev_c = None           # 天花板高度图
+        # default 场景下坐标变换：original -> aligned（若存在）
+        self.default_align_enabled = False
+        self.default_align_rotation = np.eye(3, dtype=np.float64)
+        self.default_align_center = np.zeros(3, dtype=np.float64)
 
     def loadTomogram(self, tomo_file):
         with open(self.tomo_dir + tomo_file + '.pickle', 'rb') as handle:
@@ -60,6 +64,23 @@ class TomogramPlanner(object):
             self.slice_dh = float(multi_layer_point_cloud_map_and_params['slice_dh'])
             self.map_dim = [tomogram.shape[2], tomogram.shape[3]]
             self.offset = np.array([int(self.map_dim[0] / 2), int(self.map_dim[1] / 2)], dtype=np.int32)
+
+            # optional: default 场景的原始坐标系对齐信息
+            align = multi_layer_point_cloud_map_and_params.get('default_align', {})
+            if isinstance(align, dict) and bool(align.get('enabled', False)):
+                self.default_align_enabled = True
+                self.default_align_rotation = np.asarray(
+                    align.get('rotation_aligned_from_original', np.eye(3)),
+                    dtype=np.float64,
+                )
+                self.default_align_center = np.asarray(
+                    align.get('center', np.zeros(3)),
+                    dtype=np.float64,
+                )
+            else:
+                self.default_align_enabled = False
+                self.default_align_rotation = np.eye(3, dtype=np.float64)
+                self.default_align_center = np.zeros(3, dtype=np.float64)
 
         trav = tomogram[0]
         trav_gx = tomogram[1]
@@ -237,3 +258,22 @@ class TomogramPlanner(object):
             
         except Exception as e:
             return None
+
+    def transform_traj_to_original_frame(self, traj_3d):
+        """将 aligned/map 坐标系轨迹逆变换回点云原始坐标系。"""
+        traj = np.asarray(traj_3d, dtype=np.float64)
+        if traj.ndim != 2 or traj.shape[1] < 3:
+            return traj_3d
+        if not self.default_align_enabled:
+            return traj_3d
+
+        center = self.default_align_center.reshape(1, 3)
+        R = self.default_align_rotation
+        # aligned = R @ (original - center) + center
+        # => original = R^T @ (aligned - center) + center
+        xyz_aligned = traj[:, :3]
+        xyz_original = ((R.T @ (xyz_aligned - center).T).T + center)
+
+        out = traj.copy()
+        out[:, :3] = xyz_original
+        return out.astype(np.float32)
