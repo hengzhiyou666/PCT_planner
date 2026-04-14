@@ -1,5 +1,6 @@
 import glob
 import os
+import re
 import sys
 import numpy as np
 import rclpy
@@ -69,6 +70,10 @@ class PCTPlanner(Node):
         self.big_path_file = os.path.join(cwd, "整体路径.txt")
         self.current_multi_path_file = None  # 例如 “pct_path_2paths.txt”、“pct_path_3paths.txt”
 
+        # 2D Nav Goal 分段导出：跨轮合并轨迹，path1=首轮整体，pathk=合并整体减去已写入的 path1..path(k-1)
+        self._nav_goal_lifetime_traj = None  # 与 整体路径.txt 同坐标系（导出变换后）的跨轮累计点列
+        self._nav_goal_path_point_counts = []  # 每个 pathN.txt 已写入的点数，用于计算下一段差分
+
         # 启动时删除旧的路径文件，防止在旧文件上追加
         for fname in os.listdir(cwd):
             if (
@@ -76,6 +81,7 @@ class PCTPlanner(Node):
                 or fname.endswith("条路径.txt")
                 or (fname.startswith("pct_path_") and fname.endswith("paths.txt"))
                 or fname in ("onebigpath.txt", "onebigpath_with_title.txt")
+                or re.fullmatch(r"path\d+\.txt", fname)
             ):
                 try:
                     os.remove(os.path.join(cwd, fname))
@@ -189,6 +195,9 @@ class PCTPlanner(Node):
 
     def goal_pose_callback(self, msg: PoseStamped):
         """RViz 2D Nav Goal：结束本轮规划并清空 RViz 显示的所有路径"""
+        # 在清空本轮前：按 2D Nav Goal 次数写出 path1.txt、path2.txt、…（不改变 整体路径.txt / pct_path_* 的生成方式）
+        self._export_path_files_on_nav_goal()
+
         # 清空 Path 显示：发布一个空 Path 即可让 RViz 的 Path 显示清除
         empty = Path()
         empty.header.stamp = self.get_clock().now().to_msg()
@@ -214,6 +223,13 @@ class PCTPlanner(Node):
         """导出到 txt 时的 z：保持原始数值"""
         return float(z_value)
 
+    def _flip_xyz_if_needed(self, x_value: float, y_value: float, z_value: float):
+        """根据配置决定是否对导出 xyz 同时取反。"""
+        flip = bool(getattr(self.planner, "flip_xyz_output", False))
+        if flip:
+            return -float(x_value), -float(y_value), -float(z_value)
+        return float(x_value), float(y_value), float(z_value)
+
     def _traj_for_local_export(self, traj_3d: np.ndarray) -> np.ndarray:
         """导出到本地 txt 前，将轨迹转换到点云原始坐标系（若可用）。"""
         if hasattr(self, "planner") and hasattr(self.planner, "transform_traj_to_original_frame"):
@@ -224,14 +240,60 @@ class PCTPlanner(Node):
                 return traj_3d
         return traj_3d
 
+    def _merge_traj_skip_duplicate_joint(self, base: np.ndarray, extra: np.ndarray) -> np.ndarray:
+        """将 extra 拼到 base 后；若首尾点重合则去掉 extra 的首点（与段间拼接规则一致）。"""
+        base = np.asarray(base, dtype=np.float64)
+        extra = np.asarray(extra, dtype=np.float64)
+        if extra.size == 0:
+            return base
+        if base.size == 0:
+            return extra.copy()
+        if np.allclose(base[-1, :3], extra[0, :3], rtol=0.0, atol=1e-4):
+            return np.vstack([base, extra[1:]])
+        return np.vstack([base, extra])
+
+    def _write_xyz_path_txt(self, file_path: str, traj: np.ndarray) -> None:
+        """与 整体路径.txt 相同的逐行格式写入。"""
+        traj = np.asarray(traj, dtype=np.float64)
+        with open(file_path, "w", encoding="utf-8") as f:
+            for pt in traj:
+                x_out, y_out, z_out = self._flip_xyz_if_needed(float(pt[0]), float(pt[1]), float(pt[2]))
+                z_out = self._export_z(z_out)
+                f.write(f"{x_out:.6f} {y_out:.6f} {z_out:.6f}\n")
+
+    def _export_path_files_on_nav_goal(self) -> None:
+        """本轮若有累计路径，则更新跨轮轨迹并写入 pathN.txt（path1=首轮整体，pathk=累计整体减去已分配的 path1..path(k-1)）。"""
+        if self.big_path_traj is None or len(self.big_path_traj) == 0:
+            return
+
+        curr = np.asarray(self._traj_for_local_export(self.big_path_traj), dtype=np.float64)
+        if self._nav_goal_lifetime_traj is None:
+            whole = curr.copy()
+        else:
+            whole = self._merge_traj_skip_duplicate_joint(self._nav_goal_lifetime_traj, curr)
+
+        committed = int(sum(self._nav_goal_path_point_counts))
+        segment = whole[committed:].copy()
+        n_file = len(self._nav_goal_path_point_counts) + 1
+        out_path = os.path.join(os.getcwd(), f"path{n_file}.txt")
+        self._write_xyz_path_txt(out_path, segment)
+        self._nav_goal_path_point_counts.append(int(len(segment)))
+        self._nav_goal_lifetime_traj = whole
+
+        self.get_logger().info(
+            f"2D Nav Goal：已写入 {os.path.basename(out_path)}（{len(segment)} 点），"
+            f"累计轨迹 {len(whole)} 点。"
+        )
+
     def _append_to_files(self, traj_3d: np.ndarray, seg_idx: int):
         # “整体路径.txt”：始终保存当前轮的整体路径坐标（所有段拼接）
         if self.big_path_traj is not None:
             export_big = self._traj_for_local_export(self.big_path_traj)
             with open(self.big_path_file, "w", encoding="utf-8") as f1:
                 for pt in export_big:
-                    z_out = self._export_z(pt[2])
-                    f1.write(f"{pt[0]:.6f} {pt[1]:.6f} {z_out:.6f}\n")
+                    x_out, y_out, z_out = self._flip_xyz_if_needed(float(pt[0]), float(pt[1]), float(pt[2]))
+                    z_out = self._export_z(z_out)
+                    f1.write(f"{x_out:.6f} {y_out:.6f} {z_out:.6f}\n")
 
         # “pct_path_Npaths.txt”：根据当前段数命名，写入每段前加 path1:/path2: 标题行
         cwd = os.getcwd()
@@ -250,8 +312,9 @@ class PCTPlanner(Node):
                 f2.write(self._segment_title(k) + "\n")
                 export_seg = self._traj_for_local_export(seg)
                 for pt in export_seg:
-                    z_out = self._export_z(pt[2])
-                    f2.write(f"{pt[0]:.6f} {pt[1]:.6f} {z_out:.6f}\n")
+                    x_out, y_out, z_out = self._flip_xyz_if_needed(float(pt[0]), float(pt[1]), float(pt[2]))
+                    z_out = self._export_z(z_out)
+                    f2.write(f"{x_out:.6f} {y_out:.6f} {z_out:.6f}\n")
         self.current_multi_path_file = new_multi
 
     def _point_in_bounds(self, p_xyz: np.ndarray) -> bool:

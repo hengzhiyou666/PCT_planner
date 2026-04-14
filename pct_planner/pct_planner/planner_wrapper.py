@@ -50,6 +50,7 @@ class TomogramPlanner(object):
         self.default_align_enabled = False
         self.default_align_rotation = np.eye(3, dtype=np.float64)
         self.default_align_center = np.zeros(3, dtype=np.float64)
+        self.flip_xyz_output = False
 
     def loadTomogram(self, tomo_file):
         with open(self.tomo_dir + tomo_file + '.pickle', 'rb') as handle:
@@ -64,6 +65,7 @@ class TomogramPlanner(object):
             self.slice_dh = float(multi_layer_point_cloud_map_and_params['slice_dh'])
             self.map_dim = [tomogram.shape[2], tomogram.shape[3]]
             self.offset = np.array([int(self.map_dim[0] / 2), int(self.map_dim[1] / 2)], dtype=np.int32)
+            self.flip_xyz_output = bool(multi_layer_point_cloud_map_and_params.get('flip_xyz_output', False))
 
             # optional: default 场景的原始坐标系对齐信息
             align = multi_layer_point_cloud_map_and_params.get('default_align', {})

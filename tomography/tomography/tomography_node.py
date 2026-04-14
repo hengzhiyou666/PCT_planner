@@ -198,6 +198,7 @@ class Tomography(Node):
         self.resolution = scene_cfg.map.resolution#保存为实例变量
         self.ground_h = scene_cfg.map.ground_h#保存为实例变量
         self.slice_dh = scene_cfg.map.slice_dh
+        self.flip_xyz_output = bool(getattr(scene_cfg.map, "flip_xyz_output", False))
 
         self.center = np.zeros(2, dtype=np.float32)#保存为实例变量
         self.tomogram = Tomogram(scene_cfg)#保存为实例变量
@@ -428,6 +429,7 @@ class Tomography(Node):
             'center': self.center,
             'slice_h0': self.slice_h0,
             'slice_dh': self.slice_dh,
+            'flip_xyz_output': bool(getattr(self, "flip_xyz_output", False)),
             # default 场景可选：记录 original->aligned 变换，供 planner 导出原始坐标系路径
             'default_align': {
                 'enabled': bool(getattr(self, "default_align_enabled", False)),
