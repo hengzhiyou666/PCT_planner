@@ -70,8 +70,7 @@ class PCTPlanner(Node):
         self.big_path_file = os.path.join(cwd, "整体路径.txt")
         self.current_multi_path_file = None  # 例如 “pct_path_2paths.txt”、“pct_path_3paths.txt”
 
-        # 2D Nav Goal 分段导出：跨轮合并轨迹，path1=首轮整体，pathk=合并整体减去已写入的 path1..path(k-1)
-        self._nav_goal_lifetime_traj = None  # 与 整体路径.txt 同坐标系（导出变换后）的跨轮累计点列
+        # 2D Nav Goal 分段导出：基于当前累计路径做差分导出
         self._nav_goal_path_point_counts = []  # 每个 pathN.txt 已写入的点数，用于计算下一段差分
 
         # 启动时删除旧的路径文件，防止在旧文件上追加
@@ -194,27 +193,18 @@ class PCTPlanner(Node):
         return
 
     def goal_pose_callback(self, msg: PoseStamped):
-        """RViz 2D Nav Goal：结束本轮规划并清空 RViz 显示的所有路径"""
-        # 在清空本轮前：按 2D Nav Goal 次数写出 path1.txt、path2.txt、…（不改变 整体路径.txt / pct_path_* 的生成方式）
+        """RViz 2D Nav Goal：导出 pathN.txt，但不清空当前路径与点序列。"""
+        # 点击 2D Nav Goal 时仅触发 pathN.txt 导出；
+        # 保留 RViz 上现有路径，且下一次 Publish Point 继续从上一个点衔接规划。
         self._export_path_files_on_nav_goal()
 
-        # 清空 Path 显示：发布一个空 Path 即可让 RViz 的 Path 显示清除
-        empty = Path()
-        empty.header.stamp = self.get_clock().now().to_msg()
-        empty.header.frame_id = "map"
-        self.path_pub.publish(empty)
-
-        # 重置本轮状态（文件不清空，只是停止本轮累积；下一轮从“起点”重新开始）
-        self.has_start = False
-        self.points_seq = []
-        self.big_path_traj = None
-        self.segment_count = 0
-        self.segments = []
-        self.current_multi_path_file = None
-
-        self.get_logger().info("已清除所有规划路径，结束本轮全局路径规划。")
-        print("请输入起点：", flush=True)
-        self.get_logger().info("\n请输入起点：")
+        self.get_logger().info("已导出 pathN.txt，当前路径与起点状态保持不变，可继续追加途径点。")
+        if self.has_start:
+            print("请输入下一个途径点：", flush=True)
+            self.get_logger().info("请输入下一个途径点：")
+        else:
+            print("请输入起点：", flush=True)
+            self.get_logger().info("\n请输入起点：")
 
     def _segment_title(self, k: int) -> str:
         return f"path{k}:"
@@ -262,27 +252,25 @@ class PCTPlanner(Node):
                 f.write(f"{x_out:.6f} {y_out:.6f} {z_out:.6f}\n")
 
     def _export_path_files_on_nav_goal(self) -> None:
-        """本轮若有累计路径，则更新跨轮轨迹并写入 pathN.txt（path1=首轮整体，pathk=累计整体减去已分配的 path1..path(k-1)）。"""
+        """若有累计路径则写入 pathN.txt（path1=整体，pathk=相对之前导出的新增段）。"""
         if self.big_path_traj is None or len(self.big_path_traj) == 0:
             return
 
         curr = np.asarray(self._traj_for_local_export(self.big_path_traj), dtype=np.float64)
-        if self._nav_goal_lifetime_traj is None:
-            whole = curr.copy()
-        else:
-            whole = self._merge_traj_skip_duplicate_joint(self._nav_goal_lifetime_traj, curr)
-
         committed = int(sum(self._nav_goal_path_point_counts))
-        segment = whole[committed:].copy()
+        if committed >= len(curr):
+            self.get_logger().info("2D Nav Goal：当前无新增路径点，跳过 pathN.txt 导出。")
+            return
+
+        segment = curr[committed:].copy()
         n_file = len(self._nav_goal_path_point_counts) + 1
         out_path = os.path.join(os.getcwd(), f"path{n_file}.txt")
         self._write_xyz_path_txt(out_path, segment)
         self._nav_goal_path_point_counts.append(int(len(segment)))
-        self._nav_goal_lifetime_traj = whole
 
         self.get_logger().info(
             f"2D Nav Goal：已写入 {os.path.basename(out_path)}（{len(segment)} 点），"
-            f"累计轨迹 {len(whole)} 点。"
+            f"累计轨迹 {len(curr)} 点。"
         )
 
     def _append_to_files(self, traj_3d: np.ndarray, seg_idx: int):

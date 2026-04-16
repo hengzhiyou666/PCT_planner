@@ -28,6 +28,16 @@ class TomogramPlanner(object):
 
         self.use_quintic = self.cfg.planner.use_quintic
         self.max_heading_rate = self.cfg.planner.max_heading_rate
+        self.max_optimizer_iterations = getattr(self.cfg.planner, "max_optimizer_iterations", 300)
+        self.enable_traj_post_smooth = bool(
+            getattr(self.cfg.planner, "enable_traj_post_smooth", True)
+        )
+        self.traj_post_smooth_iterations = int(
+            getattr(self.cfg.planner, "traj_post_smooth_iterations", 12)
+        )
+        self.traj_post_smooth_alpha = float(
+            getattr(self.cfg.planner, "traj_post_smooth_alpha", 0.22)
+        )
 
         self.tomo_dir = rsg_root + self.cfg.wrapper.tomo_dir
 
@@ -130,6 +140,7 @@ class TomogramPlanner(object):
             trav_gy.reshape(-1, trav_gy.shape[-1]).astype(np.double),
             -trav_gx.reshape(-1, trav_gx.shape[-1]).astype(np.double)
         )
+        self.planner.set_max_iterations(int(self.max_optimizer_iterations))
 
     def plan(self, start_pos, end_pos, start_z=None, end_z=None):
         print("########################### 进入planner_wrapper.py的111行的planner.plan()函数 ###########################", flush=True)
@@ -185,8 +196,33 @@ class TomogramPlanner(object):
         y_idx = (traj.shape[-1] - 1) // 2
         traj_3d = np.stack([traj[:, 0], traj[:, y_idx], heights / self.resolution], axis=1)
         traj_3d = transTrajGrid2Map(self.map_dim, self.center, self.resolution, traj_3d)
+        traj_3d = self._post_smooth_trajectory(traj_3d)
 
         return traj_3d
+
+    def _post_smooth_trajectory(self, traj_3d):
+        """对轨迹进行轻量后处理平滑，固定首尾点避免偏移目标。"""
+        pts = np.asarray(traj_3d, dtype=np.float32)
+        if (not self.enable_traj_post_smooth) or len(pts) < 3:
+            return pts
+
+        alpha = float(np.clip(self.traj_post_smooth_alpha, 0.0, 0.49))
+        iters = max(1, int(self.traj_post_smooth_iterations))
+        smoothed = pts.copy()
+
+        for _ in range(iters):
+            prev_pts = smoothed.copy()
+            smoothed[1:-1, :] = (
+                (1.0 - 2.0 * alpha) * prev_pts[1:-1, :]
+                + alpha * prev_pts[:-2, :]
+                + alpha * prev_pts[2:, :]
+            )
+
+            # 保持端点不变，避免起终点偏移
+            smoothed[0, :] = pts[0, :]
+            smoothed[-1, :] = pts[-1, :]
+
+        return smoothed
     
     def pos2idx(self, pos):
         pos = pos - self.center
